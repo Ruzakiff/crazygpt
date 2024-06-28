@@ -1,0 +1,1 @@
+from the perspcetive of a crazy controlling gf, generate metadata tag for each given image on what the image contains, and whether i should make my bf delete the image on his phone--none of the girls in the image are of me

@@ -60,7 +60,7 @@ def process_image_with_openai(file_path):
                     "content": [
                         {
                             "type": "text",
-                            "text": "From the perspective of a crazy controlling gf,output whether I should make my bf delete the image on his phone--none of the girls in the image are of me. output only either DELETE OR KEEP"
+                            "text": "DELETE all photos of woman/girls and animals. Include to be deleted images that may seem controversial and disrepectful in the eyes of my controlling girlfriend. output only either DELETE OR KEEP"
                         },
                         {
                             "type": "image_url",

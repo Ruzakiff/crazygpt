@@ -1,0 +1,67 @@
+Token-Based Batch Processing System Flow
+
+1. Token Purchase
+   - Client sends a POST request to /purchase_tokens
+   - Server generates a unique user token
+   - Server allocates the purchased amount of tokens to the user
+   - Server returns the user token to the client
+
+2. Balance Check
+   - Client sends a POST request to /check_balance with their user token
+   - Server verifies the token and returns the current balance
+
+3. File Upload
+   - Client creates a JSONL file containing the batch requests
+   - Client sends a POST request to /v1/files with:
+     - User token in the header
+     - File data in the request body (multipart/form-data)
+     - 'purpose' set to 'batch' in the form data
+   - Server validates the user token
+   - Server processes and stores the uploaded file
+   - Server generates and returns a unique file ID to the client
+
+4. Batch Creation
+   - Client sends a POST request to /v1/batches with:
+     - User token in the header
+     - Input file ID (obtained from file upload), endpoint, and completion window in the body
+   - Server validates the user token and required fields
+   - Server creates a new batch job with a unique batch ID
+   - Server deducts tokens from the user's balance
+   - Server returns the batch ID and updated balance to the client
+
+5. Batch Status Check
+   - Client sends a GET request to /v1/batches/<batch_id> with their user token
+   - Server validates the user token and batch ownership
+   - Server checks the batch status (simulated based on elapsed time)
+   - Server returns the current batch status and remaining balance
+
+6. Token Expiry
+   - Tokens automatically expire 24 hours after purchase
+   - Expired tokens are invalidated during token validation
+
+7. Error Handling
+   - Server returns appropriate error messages and status codes for:
+     - Invalid tokens
+     - Insufficient balance
+     - Missing required fields
+     - Unauthorized access to batches
+     - Non-existent batches
+     - File upload errors (invalid file type, size limit exceeded, etc.)
+
+Note: This system acts as a wrapper around the OpenAI API, allowing for 
+token-based charging of users. The actual processing of batches is 
+simulated in this mock server. In a production environment, this would 
+interface with the real OpenAI API for batch processing.
+
+File Upload Specifications:
+- Accepted file format: JSONL
+- Maximum file size: 100 MB
+- Maximum number of requests per file: 50,000
+
+Future Enhancements:
+- Implement actual batch processing using uploaded files
+- Add more detailed batch processing status updates
+- Implement token refill options
+- Add user authentication and account management
+- Implement proper database storage instead of in-memory storage
+- Add file deletion endpoint for managing uploaded files

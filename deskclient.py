@@ -154,6 +154,25 @@ class DeskClient:
             print(response.text)
             return None
 
+    def check_balance(self):
+        url = f"{self.server_url}/check_balance"
+        headers = {
+            'Content-Type': 'application/json',
+            'User-Token': self.user_token
+        }
+        data = {'user_token': self.user_token}
+        
+        response = requests.post(url, headers=headers, json=data)
+        
+        if response.status_code == 200:
+            balance = response.json()['balance']
+            print(f"Current token balance: {balance}")
+            return balance
+        else:
+            print(f"Failed to check balance. Status code: {response.status_code}")
+            print(response.text)
+            return None
+
     def process_response_file(self, response_file_path: str):
         with open(response_file_path, 'r') as file:
             for line in file:
@@ -186,6 +205,42 @@ class DeskClient:
             else:
                 print(f"File {filename} not found")
 
+    def get_batch_jobs(self):
+        url = f"{self.server_url}/user/batch_jobs"
+        headers = {
+            'User-Token': self.user_token
+        }
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            batch_jobs = response.json()['batch_jobs']
+            print("Batch jobs:")
+            for job in batch_jobs:
+                print(f"ID: {job['id']}, Status: {job['status']}, Created at: {job['created_at']}")
+            return batch_jobs
+        else:
+            print(f"Failed to get batch jobs. Status code: {response.status_code}")
+            print(response.text)
+            return None
+
+    def get_file_ids(self):
+        url = f"{self.server_url}/user/file_ids"
+        headers = {
+            'User-Token': self.user_token
+        }
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            file_ids = response.json()['file_ids']
+            print("File IDs:")
+            for file_id in file_ids:
+                print(file_id)
+            return file_ids
+        else:
+            print(f"Failed to get file IDs. Status code: {response.status_code}")
+            print(response.text)
+            return None
+
 # Example usage
 if __name__ == "__main__":
     server_url = "http://localhost:5000"  # Local development server URL
@@ -209,6 +264,13 @@ if __name__ == "__main__":
         print(f"Uploading {file_path}...")
         client.upload_jsonl(file_path)
         file_index += 1
+
+    # Check balance after uploading
+    client.check_balance()
+
+    # Get batch jobs and file IDs
+    client.get_batch_jobs()
+    client.get_file_ids()
 
     # After processing and uploading all batches
     response_file = input("Enter the path to the response file: ")

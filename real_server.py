@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 import uuid
 from threading import Lock
 import math
+import requests
+from openai import OpenAI
 
 app = Flask(__name__)
 
@@ -19,38 +21,47 @@ MAX_BATCH_REQUESTS = 50000
 MAX_BATCH_SIZE_MB = 100
 
 # Helper functions for batch processing
-def create_batch_job(user_token, file_paths):
-    batch_file_id = f"file-{secrets.token_hex(3)}"
-    batch_id = f"batch-{uuid.uuid4().hex[:6]}"
+def create_openai_batch(file_id, user_token):
+    client = OpenAI()
     
-    batch_jobs[batch_id] = {
-        'id': batch_id,
-        'status': 'validating',
-        'input_file_id': batch_file_id,
-        'created_at': datetime.now().timestamp(),
-        'file_paths': file_paths,
-        'token': user_token
-    }
-    
-    return batch_id, batch_file_id
+    try:
+        batch = client.batches.create(
+            input_file_id=file_id,
+            endpoint="/v1/chat/completions",
+            completion_window="24h",
+            metadata={
+                "user_token": user_token
+            }
+        )
+        return batch
+    except Exception as e:
+        raise Exception(f"Failed to create OpenAI batch: {str(e)}")
 
 def process_batch(batch_id):
     batch = batch_jobs[batch_id]
-    current_time = datetime.now()
-    created_time = datetime.fromtimestamp(batch['created_at'])
-    elapsed_time = (current_time - created_time).total_seconds()
     
-    if elapsed_time < 10:
-        batch['status'] = 'validating'
-    elif elapsed_time < 30:
-        batch['status'] = 'in_progress'
-    else:
-        batch['status'] = 'completed'
+    # Use the OpenAI client to get the latest batch status
+    client = OpenAI()
+    openai_batch = client.batches.retrieve(batch_id)
+    
+    batch['status'] = openai_batch.status
+    
+    if openai_batch.status == 'completed':
+        # Fetch the results from OpenAI if not already stored
         if 'decisions' not in batch:
-            batch['decisions'] = mock_api_decision(batch['file_paths'])
+            output_file = client.files.retrieve(openai_batch.output_file_id)
+            # Process the output file to get decisions
+            # This is a placeholder - you'll need to implement the actual processing
+            batch['decisions'] = process_openai_output(output_file)
     
     batch_jobs[batch_id] = batch
     return batch
+
+def process_openai_output(output_file):
+    # Implement the logic to process the OpenAI output file
+    # and return the decisions in the format your application expects
+    # This is a placeholder implementation
+    return []
 
 def get_batch_result(batch_id):
     batch = process_batch(batch_id)
@@ -101,10 +112,50 @@ def rate_limited(token):
         rate_limits[token].append(current_time)
         return False
 
+def upload_file_to_openai(file):
+    """
+    Upload a file to OpenAI API.
+    
+    Args:
+    file: FileStorage object from Flask request.files
+    
+    Returns:
+    dict: OpenAI API response containing file information
+    """
+    openai_api_key = os.environ.get('OPENAI_API_KEY')
+    if not openai_api_key:
+        raise ValueError('OpenAI API key not configured')
+
+    headers = {
+        "Authorization": f"Bearer {openai_api_key}"
+    }
+    files = {
+        'file': (file.filename, file.stream, 'application/octet-stream'),
+        'purpose': (None, 'batch')
+    }
+
+    response = requests.post(
+        "https://api.openai.com/v1/files",
+        headers=headers,
+        files=files
+    )
+
+    if response.status_code != 200:
+        raise Exception(f'Failed to upload file to OpenAI API: {response.text}')
+
+    return response.json()
+
+# Add these new functions
+def get_user_batch_jobs(user_token):
+    return [job for job in batch_jobs.values() if job['token'] == user_token]
+
+def get_user_file_ids(user_token):
+    return [job['openai_file_id'] for job in batch_jobs.values() if job['token'] == user_token]
+
 # Endpoints
 @app.route('/')
 def root():
-    return jsonify({"message": "Mock server is running"}), 200
+    return jsonify({"message": "Real server is running"}), 200
 
 @app.route('/purchase_tokens', methods=['POST'])
 def purchase_tokens():
@@ -152,8 +203,20 @@ def upload_jsonl():
     if file_size > MAX_BATCH_SIZE_MB * 1024 * 1024:  # Convert MB to bytes
         return jsonify({'error': f'File size exceeds maximum allowed ({MAX_BATCH_SIZE_MB} MB)'}), 400
 
+    # Upload file to OpenAI API
+    try:
+        openai_file_info = upload_file_to_openai(file)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    # Create OpenAI batch
+    try:
+        batch = create_openai_batch(openai_file_info['id'], user_token)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
     # Process the JSONL file
-    batch_id = f"batch-{uuid.uuid4().hex[:6]}"
+    file.seek(0)  # Reset file pointer to the beginning
     file_content = file.read().decode('utf-8').splitlines()
     num_requests = len(file_content)
 
@@ -162,12 +225,13 @@ def upload_jsonl():
         return jsonify({'error': f'Number of requests exceeds maximum allowed ({MAX_BATCH_REQUESTS})'}), 400
 
     # Create batch job
-    batch_jobs[batch_id] = {
-        'id': batch_id,
-        'status': 'validating',
-        'created_at': datetime.now().timestamp(),
+    batch_jobs[batch.id] = {
+        'id': batch.id,
+        'status': batch.status,
+        'created_at': batch.created_at,
         'requests': file_content,
-        'token': user_token
+        'token': user_token,
+        'openai_file_id': openai_file_info['id']
     }
 
     # Deduct initial cost
@@ -178,10 +242,11 @@ def upload_jsonl():
         tokens[user_token]['amount'] -= initial_cost
 
     return jsonify({
-        'batch_id': batch_id,
-        'status': 'validating',
+        'batch_id': batch.id,
+        'status': batch.status,
         'remaining_balance': tokens[user_token]['amount'],
         'total_requests': num_requests,
+        'openai_file_id': openai_file_info['id'],
         'message': f'Successfully created batch to process {num_requests} requests.'
     }), 202
 
@@ -201,7 +266,7 @@ def get_batch_status(batch_id):
     
     # Deduct final cost if batch is completed
     if result['status'] == 'completed':
-        final_cost = len(result['file_paths'])
+        final_cost = len(result['requests'])  # Assuming one request per line in the original file
         tokens[user_token]['amount'] -= final_cost
 
     response = {
@@ -231,6 +296,27 @@ def purchase_tier():
     amount = tier_pricing[tier]
     user_token = create_token(amount)
     return jsonify({'user_token': user_token, 'tier': tier}), 200
+
+# Add these new routes
+@app.route('/user/batch_jobs', methods=['GET'])
+def get_user_batch_jobs_route():
+    user_token = request.headers.get('User-Token')
+    if not user_token or not validate_token(user_token):
+        return jsonify({'error': 'Invalid or expired token'}), 400
+
+    user_jobs = get_user_batch_jobs(user_token)
+    return jsonify({
+        'batch_jobs': [{'id': job['id'], 'status': job['status'], 'created_at': job['created_at']} for job in user_jobs]
+    }), 200
+
+@app.route('/user/file_ids', methods=['GET'])
+def get_user_file_ids_route():
+    user_token = request.headers.get('User-Token')
+    if not user_token or not validate_token(user_token):
+        return jsonify({'error': 'Invalid or expired token'}), 400
+
+    file_ids = get_user_file_ids(user_token)
+    return jsonify({'file_ids': file_ids}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)

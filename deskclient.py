@@ -36,7 +36,8 @@ class DeskClient:
         with open(file_path, "rb") as image_file:
             image_data = image_file.read()
 
-        custom_id = f"request-{os.path.basename(original_path)}"
+        # Use the full original path in the custom_id
+        custom_id = f"request-{original_path}"
         self.add_request(
             custom_id=custom_id,
             method="POST",
@@ -171,7 +172,7 @@ class DeskClient:
         else:
             print(f"Failed to check balance. Status code: {response.status_code}")
             print(response.text)
-            return None
+            return -1  # Return 0 or another appropriate default value instead of None
 
     def process_response_file(self, response_file_path: str):
         with open(response_file_path, 'r') as file:
@@ -179,7 +180,6 @@ class DeskClient:
                 response_data = json.loads(line)
                 custom_id = response_data['custom_id']
                 response = response_data['response']
-
                 if response and response['status_code'] == 200:
                     content = response['body']['choices'][0]['message']['content']
                     self.update_image_status(custom_id, content)
@@ -187,23 +187,23 @@ class DeskClient:
                     print(f"Error processing request {custom_id}: {response_data.get('error', 'Unknown error')}")
 
     def update_image_status(self, custom_id: str, content: str):
-        # Extract the original filename from the custom_id
-        filename = custom_id.replace('request-', '')
+        # Extract the original filepath from the custom_id
+        filepath = custom_id.replace('request-', '')
         
         # Determine the action based on the content
-        action = 'KEEP' if content.strip().upper() == 'KEEP' else 'DELETE'
+        action = content.strip().upper()
         
-        # Update the status (you might want to store this information in a database or file)
-        print(f"Image {filename}: {action}")
-        
-        # If the action is DELETE, you might want to actually delete the file
+        # Report the status
+        print(f"Image {filepath}: {action}")
+
+        # If you want to perform actions based on the status:
         if action == 'DELETE':
-            file_path = os.path.join(self.processed_folder, filename)
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                print(f"Deleted {filename}")
+            if os.path.exists(filepath):
+                print(f"Would delete: {filepath}")
+                # Uncomment the following line to actually delete the file
+                # os.remove(filepath)
             else:
-                print(f"File {filename} not found")
+                print(f"File not found: {filepath}")
 
     def get_batch_jobs(self):
         url = f"{self.server_url}/user/batch_jobs"
@@ -244,16 +244,16 @@ class DeskClient:
 # Example usage
 if __name__ == "__main__":
     server_url = "http://localhost:5000"  # Local development server URL
-    client = DeskClient(server_url, user_token=None)
-    
-    # Purchase tokens before processing
-    token_amount = int(input("Enter the number of tokens to purchase: "))
-    client.purchase_tokens(token_amount)
-    
+    client = DeskClient(server_url, user_token='tqKliYKO_qh6l12vwSllAg')
+    if client.check_balance() < 10:
+        print("Insufficient tokens, purchasing more...")
+        print(client.purchase_tokens(100))  # Assuming purchase_tokens method exists and 100 is the desired amount
+    else:
+        print("Sufficient tokens available.")
     folder_path = input("Enter the folder path: ")
     client.process_folder(folder_path)
     output_base = "batch_requests"
-    client.create_batch_jsonl(output_base)
+    # client.create_batch_jsonl(output_base)
     
     # Upload each created JSONL file
     file_index = 1
@@ -262,7 +262,7 @@ if __name__ == "__main__":
         if not os.path.exists(file_path):
             break
         print(f"Uploading {file_path}...")
-        client.upload_jsonl(file_path)
+        #client.upload_jsonl(file_path)
         file_index += 1
 
     # Check balance after uploading
@@ -272,6 +272,6 @@ if __name__ == "__main__":
     client.get_batch_jobs()
     client.get_file_ids()
 
-    # After processing and uploading all batches
+    #After processing and uploading all batches
     response_file = input("Enter the path to the response file: ")
     client.process_response_file(response_file)

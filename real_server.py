@@ -147,6 +147,7 @@ def upload_file_to_openai(file):
 
 # Add these new functions
 def get_user_batch_jobs(user_token):
+    print(batch_jobs)
     return [job for job in batch_jobs.values() if job['token'] == user_token]
 
 def get_user_file_ids(user_token):
@@ -320,3 +321,4 @@ def get_user_file_ids_route():
 
 if __name__ == '__main__':
     app.run(debug=True)
+    

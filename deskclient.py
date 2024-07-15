@@ -5,6 +5,9 @@ import requests
 from typing import List, Dict
 from PIL import Image
 from pillow_heif import register_heif_opener
+import time
+import io
+import random
 
 register_heif_opener()
 
@@ -174,17 +177,178 @@ class DeskClient:
             print(response.text)
             return -1  # Return 0 or another appropriate default value instead of None
 
-    def process_response_file(self, response_file_path: str):
-        with open(response_file_path, 'r') as file:
-            for line in file:
-                response_data = json.loads(line)
-                custom_id = response_data['custom_id']
-                response = response_data['response']
-                if response and response['status_code'] == 200:
-                    content = response['body']['choices'][0]['message']['content']
-                    self.update_image_status(custom_id, content)
+    def get_batch_status(self, batch_id, retries=3):
+        url = f"{self.server_url}/batches/{batch_id}"
+        headers = {
+            'User-Token': self.user_token
+        }
+        
+        for attempt in range(retries):
+            try:
+                response = requests.get(url, headers=headers)
+                print(f"Attempt {attempt + 1}: Status code {response.status_code}")
+                print(f"Response headers: {response.headers}")
+                print(f"Response content: {response.text[:1000]}...")  # Print first 1000 characters
+                
+                response.raise_for_status()  # Raise an exception for bad status codes
+                return response.json()
+            except requests.exceptions.RequestException as e:
+                print(f"Error occurred: {e}")
+                if attempt < retries - 1:
+                    wait_time = (2 ** attempt) + random.random()
+                    print(f"Retrying in {wait_time:.2f} seconds...")
+                    time.sleep(wait_time)
                 else:
-                    print(f"Error processing request {custom_id}: {response_data.get('error', 'Unknown error')}")
+                    print("Max retries reached. Giving up.")
+                    return None
+
+    def poll_batch_status(self, batch_id, interval=15, timeout=3600):  # 1 hour timeout
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            status = self.get_batch_status(batch_id)
+            if status is None:
+                print("Failed to get batch status. Continuing to next attempt...")
+                time.sleep(interval)
+                continue
+            
+            if status['status'] == 'completed':
+                print(f"Batch {batch_id} completed.")
+                self.test_function(status)  # Call the test function
+                return status
+            elif status['status'] in ['failed', 'expired', 'cancelled']:
+                print(f"Batch {batch_id} {status['status']}.")
+                return None
+            print(f"Batch {batch_id} status: {status['status']}. Waiting {interval} seconds...")
+            time.sleep(interval)
+        
+        print(f"Timeout reached for batch {batch_id}")
+        return None
+
+    def test_function(self, batch_data):
+        """
+        Test function to be called when the batch is completed.
+        
+        :param batch_data: The completed batch data
+        """
+        print("Test function called with completed batch data:")
+        print(json.dumps(batch_data, indent=2))
+        
+        # Process the batch data
+        print(f"Batch ID: {batch_data['id']}")
+        print(f"Status: {batch_data['status']}")
+        print(f"Input File ID: {batch_data['input_file_id']}")
+        print(f"Output File ID: {batch_data['output_file_id']}")
+        if 'error_file_id' in batch_data:
+            print(f"Error File ID: {batch_data['error_file_id']}")
+        else:
+            print("No Error File ID (batch completed successfully)")
+        print(f"Created at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(batch_data['created_at']))}")
+        print(f"Completed at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(batch_data['completed_at']))}")
+        
+        print("Request Counts:")
+        print(f"  Total: {batch_data['request_counts']['total']}")
+        print(f"  Completed: {batch_data['request_counts']['completed']}")
+        print(f"  Failed: {batch_data['request_counts']['failed']}")
+        
+        if 'metadata' in batch_data and batch_data['metadata']:
+            print("Metadata:")
+            for key, value in batch_data['metadata'].items():
+                print(f"  {key}: {value}")
+        
+        print(f"Remaining Balance: {batch_data['remaining_balance']}")
+        
+        # Process the output file
+        self.process_output_file(batch_data['output_file_id'])
+
+    def retrieve_file_content(self, file_id):
+        """
+        Retrieve the content of a file using its file ID.
+        
+        :param file_id: The ID of the file to retrieve
+        :return: The content of the file as a string, or None if retrieval fails
+        """
+        url = f"{self.server_url}/retrieve_file_content/{file_id}"
+        headers = {
+            'User-Token': self.user_token
+        }
+        response = requests.get(url, headers=headers)
+        
+        print(f"Response status code: {response.status_code}")
+        print(f"Response headers: {response.headers}")
+        print(f"Response content (first 1000 characters): {response.text[:1000]}")
+        
+        if response.status_code == 200:
+            return response.text
+        else:
+            print(f"Failed to retrieve file content. Status code: {response.status_code}")
+            print(response.text)
+            return None
+
+    def save_output_file(self, file_id, output_filename):
+        """
+        Retrieve the content of the output file and save it locally.
+        
+        :param file_id: The ID of the output file to retrieve
+        :param output_filename: The name of the file to save the content to
+        :return: True if successful, False otherwise
+        """
+        content = self.retrieve_file_content(file_id)
+        if content is not None:
+            with open(output_filename, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"Output file saved as {output_filename}")
+            return True
+        else:
+            print("Failed to save output file")
+            return False
+
+    def process_output_file(self, file_id):
+        """
+        Process the output file after a batch job is completed.
+        
+        :param file_id: The ID of the output file to process
+        """
+        output_filename = f"output_{file_id}.jsonl"
+        if self.save_output_file(file_id, output_filename):
+            self.process_batch_results(output_filename)
+        else:
+            print("Failed to process output file")
+
+    def save_batch_results(self, batch_data):
+        """
+        Save the batch results to a file.
+        
+        :param batch_data: The batch data received from the server
+        :return: The path to the saved file
+        """
+        filename = f"batch_results_{int(time.time())}.json"
+        with open(filename, 'w') as f:
+            json.dump(batch_data, f)
+        print(f"Batch results saved to {filename}")
+        return filename
+    def process_batch_results(self, results_file):
+        """
+        Process the batch results from a JSONL file.
+        
+        :param results_file: Path to the file containing batch results in JSONL format
+        """
+        if not os.path.exists(results_file):
+            print(f"Results file {results_file} not found.")
+            return
+
+        with open(results_file, 'r') as f:
+            for line in f:
+                try:
+                    item = json.loads(line.strip())
+                    custom_id = item.get('custom_id')
+                    content = item.get('response', {}).get('body', {}).get('choices', [{}])[0].get('message', {}).get('content')
+                    if custom_id and content:
+                        self.update_image_status(custom_id, content)
+                    else:
+                        print(f"Skipping invalid item: {item}")
+                except json.JSONDecodeError as e:
+                    print(f"Error decoding JSON: {e}")
+                    print(f"Problematic line: {line}")
 
     def update_image_status(self, custom_id: str, content: str):
         # Extract the original filepath from the custom_id
@@ -244,7 +408,7 @@ class DeskClient:
 # Example usage
 if __name__ == "__main__":
     server_url = "http://localhost:5000"  # Local development server URL
-    client = DeskClient(server_url, user_token='tqKliYKO_qh6l12vwSllAg')
+    client = DeskClient(server_url, user_token=None)
     if client.check_balance() < 10:
         print("Insufficient tokens, purchasing more...")
         print(client.purchase_tokens(100))  # Assuming purchase_tokens method exists and 100 is the desired amount
@@ -253,7 +417,7 @@ if __name__ == "__main__":
     folder_path = input("Enter the folder path: ")
     client.process_folder(folder_path)
     output_base = "batch_requests"
-    # client.create_batch_jsonl(output_base)
+    client.create_batch_jsonl(output_base)
     
     # Upload each created JSONL file
     file_index = 1
@@ -262,7 +426,7 @@ if __name__ == "__main__":
         if not os.path.exists(file_path):
             break
         print(f"Uploading {file_path}...")
-        #client.upload_jsonl(file_path)
+        client.upload_jsonl(file_path)
         file_index += 1
 
     # Check balance after uploading
@@ -273,5 +437,16 @@ if __name__ == "__main__":
     client.get_file_ids()
 
     #After processing and uploading all batches
-    response_file = input("Enter the path to the response file: ")
-    client.process_response_file(response_file)
+    batch_id = input("Enter the batch ID to poll: ")
+    completed_batch = client.poll_batch_status(batch_id)
+    
+    if completed_batch:
+        print("Batch completed successfully.")
+        # Process the completed batch
+    else:
+        print("Batch processing failed or timed out.")
+
+    # Check final balance
+    client.check_balance()
+
+    client.get_file_ids()

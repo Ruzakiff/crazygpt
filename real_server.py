@@ -19,7 +19,20 @@ batch_jobs = {}
 # Configuration
 MAX_BATCH_REQUESTS = 50000
 MAX_BATCH_SIZE_MB = 100
-
+# Function to retrieve file content given file_id
+@app.route('/retrieve_file_content/<file_id>', methods=['GET'])
+def retrieve_file_content(file_id):
+    client = OpenAI()
+    try:
+        content = client.files.content(file_id)
+        if isinstance(content, bytes):
+            return content.decode('utf-8'), 200
+        elif hasattr(content, 'text'):
+            return content.text, 200
+        else:
+            return jsonify({'error': "Unexpected content type"}), 500
+    except Exception as e:
+        return jsonify({'error': f"Failed to retrieve file content: {str(e)}"}), 500
 # Helper functions for batch processing
 def create_openai_batch(file_id, user_token):
     client = OpenAI()
@@ -263,21 +276,21 @@ def get_batch_status(batch_id):
     if batch_jobs[batch_id]['token'] != user_token:
         return jsonify({'error': 'Unauthorized access to batch'}), 403
 
-    result = process_batch(batch_id)
-    
-    # Deduct final cost if batch is completed
-    if result['status'] == 'completed':
-        final_cost = len(result['requests'])  # Assuming one request per line in the original file
-        tokens[user_token]['amount'] -= final_cost
+    # Retrieve the batch directly from OpenAI
+    client = OpenAI()
+    try:
+        openai_batch = client.batches.retrieve(batch_id)
+    except Exception as e:
+        return jsonify({'error': f'Failed to retrieve batch from OpenAI: {str(e)}'}), 500
 
-    response = {
-        'id': result['id'],
-        'status': result['status'],
-        'remaining_balance': tokens[user_token]['amount']
-    }
+    # Update local batch job status
+    batch_jobs[batch_id]['status'] = openai_batch.status
+
+    # Convert the OpenAI response to a dictionary
+    response = {k: v for k, v in openai_batch.model_dump().items() if v is not None}
     
-    if result['status'] == 'completed':
-        response['decisions'] = result.get('decisions', [])
+    # Add the user's remaining balance
+    response['remaining_balance'] = tokens[user_token]['amount']
 
     return jsonify(response), 200
 

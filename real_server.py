@@ -20,21 +20,85 @@ batch_jobs = {}
 MAX_BATCH_REQUESTS = 50000
 MAX_BATCH_SIZE_MB = 100
 
+# Function to delete a file given file_id
+def delete_file(file_id):
+    client = OpenAI()
+    try:
+        response = client.files.delete(file_id)
+        if response.deleted:
+            return {
+                'id': response.id,
+                'object': response.object,
+                'deleted': response.deleted
+            }
+        else:
+            raise Exception("File deletion unsuccessful")
+    except Exception as e:
+        raise Exception(f"Failed to delete file: {str(e)}")
+
 # Function to retrieve file content given file_id
 @app.route('/retrieve_file_content/<file_id>', methods=['GET'])
 def retrieve_file_content(file_id):
+    user_token = request.headers.get('User-Token')
+    if not user_token or not validate_token(user_token):
+        return jsonify({'error': 'Invalid or expired token'}), 400
+
     client = OpenAI()
     try:
-        content = client.files.content(file_id)
-        if isinstance(content, bytes):
-            return content.decode('utf-8'), 200
-        elif hasattr(content, 'text'):
-            return content.text, 200
+        # Retrieve content
+        response = client.files.content(file_id)
+        
+        # Determine the content type and decode if necessary
+        if isinstance(response, bytes):
+            file_content = response.decode('utf-8')
+        elif hasattr(response, 'text'):
+            file_content = response.text
         else:
-            return jsonify({'error': "Unexpected content type"}), 500
+            file_content = response.read().decode('utf-8')
+
+        # Save the output_file_id in the batch_jobs dictionary
+        for batch_id, job in batch_jobs.items():
+            if job['token'] == user_token and job.get('output_file_id') == file_id:
+                job['output_file_id'] = file_id
+                break
+
+        return file_content, 200, {'Content-Type': 'text/plain'}
+
     except Exception as e:
         return jsonify({'error': f"Failed to retrieve file content: {str(e)}"}), 500
 
+@app.route('/delete_batch_files/<batch_id>', methods=['DELETE'])
+def delete_batch_files(batch_id):
+    user_token = request.headers.get('User-Token')
+    if not user_token or not validate_token(user_token):
+        return jsonify({'error': 'Invalid or expired token'}), 400
+
+    if batch_id not in batch_jobs or batch_jobs[batch_id]['token'] != user_token:
+        return jsonify({'error': 'Batch not found or unauthorized'}), 404
+
+    try:
+        job = batch_jobs[batch_id]
+        output_file_id = job.get('output_file_id')
+        input_file_id = job['openai_file_id']
+
+        deletion_results = {}
+
+        if output_file_id:
+            output_delete_response = delete_file(output_file_id)
+            deletion_results['output_file'] = output_delete_response.get('deleted', False)
+
+        input_delete_response = delete_file(input_file_id)
+        deletion_results['input_file'] = input_delete_response.get('deleted', False)
+
+        del batch_jobs[batch_id]
+
+        return jsonify({
+            'message': 'Batch files deletion attempted',
+            'deletion_results': deletion_results
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': f"Failed to delete batch files: {str(e)}"}), 500
 # Helper functions for batch processing
 def create_openai_batch(file_id, user_token):
     client = OpenAI()
@@ -48,6 +112,15 @@ def create_openai_batch(file_id, user_token):
                 "user_token": user_token
             }
         )
+        # Store the batch information including the output_file_id
+        batch_jobs[batch.id] = {
+            'id': batch.id,
+            'status': batch.status,
+            'created_at': batch.created_at,
+            'token': user_token,
+            'openai_file_id': file_id,
+            'output_file_id': batch.output_file_id  # Store the output_file_id
+        }
         return batch
     except Exception as e:
         raise Exception(f"Failed to create OpenAI batch: {str(e)}")
@@ -246,8 +319,9 @@ def get_batch_status(batch_id):
     except Exception as e:
         return jsonify({'error': f'Failed to retrieve batch from OpenAI: {str(e)}'}), 500
 
-    # Update local batch job status
+    # Update local batch job status and output_file_id
     batch_jobs[batch_id]['status'] = openai_batch.status
+    batch_jobs[batch_id]['output_file_id'] = openai_batch.output_file_id
 
     # Convert the OpenAI response to a dictionary
     response = {k: v for k, v in openai_batch.model_dump().items() if v is not None}

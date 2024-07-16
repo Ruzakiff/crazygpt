@@ -8,6 +8,7 @@ from pillow_heif import register_heif_opener
 import time
 import io
 import random
+import uuid
 
 register_heif_opener()
 
@@ -21,15 +22,26 @@ class DeskClient:
         self.user_token = user_token
 
     def process_folder(self, folder_path: str):
+        # Clear previous requests
+        self.requests = []
+
         if not os.path.isdir(folder_path):
             print(f"Error: The folder '{folder_path}' does not exist.")
-            return
+            return False
 
+        processed_images = 0
         for filename in os.listdir(folder_path):
             file_path = os.path.join(folder_path, filename)
             if os.path.isfile(file_path) and self.is_image(file_path):
                 print(f"Processing image: {filename}")
                 self.process_image(file_path)
+                processed_images += 1
+
+        if processed_images == 0:
+            print("No images were processed. The folder might be empty or contain no valid images.")
+            return False
+
+        return True
 
     def process_image(self, file_path: str):
         original_path = file_path
@@ -202,7 +214,7 @@ class DeskClient:
                     print("Max retries reached. Giving up.")
                     return None
 
-    def poll_batch_status(self, batch_id, interval=15, timeout=3600):  # 1 hour timeout
+    def poll_batch_status(self, batch_id, interval=15, timeout=88200):  # 24.5 hour timeout
         start_time = time.time()
         while time.time() - start_time < timeout:
             status = self.get_batch_status(batch_id)
@@ -259,6 +271,14 @@ class DeskClient:
         
         # Process the output file
         self.process_output_file(batch_data['output_file_id'])
+        
+        # After processing, delete the batch files
+        deletion_results = self.delete_batch_files(batch_data['id'])
+        if deletion_results:
+            print("Batch files deletion results:")
+            print(json.dumps(deletion_results, indent=2))
+        else:
+            print("Failed to delete batch files.")
 
     def retrieve_file_content(self, file_id):
         """
@@ -311,6 +331,12 @@ class DeskClient:
         output_filename = f"output_{file_id}.jsonl"
         if self.save_output_file(file_id, output_filename):
             self.process_batch_results(output_filename)
+            # Remove the output file after processing
+            try:
+                os.remove(output_filename)
+                print(f"Removed output file: {output_filename}")
+            except OSError as e:
+                print(f"Error removing output file {output_filename}: {e}")
         else:
             print("Failed to process output file")
 
@@ -393,6 +419,26 @@ class DeskClient:
             print(response.text)
             return None
 
+    def delete_batch_files(self, batch_id):
+        """
+        Delete the input and output files associated with a batch job.
+        
+        :param batch_id: The ID of the batch job
+        :return: A dictionary with the deletion results, or None if the deletion fails
+        """
+        url = f"{self.server_url}/delete_batch_files/{batch_id}"
+        headers = {
+            'User-Token': self.user_token
+        }
+        response = requests.delete(url, headers=headers)
+        
+        if response.status_code == 200:
+            return response.json()['deletion_results']
+        else:
+            print(f"Failed to delete batch files. Status code: {response.status_code}")
+            print(response.text)
+            return None
+
 # Example usage
 if __name__ == "__main__":
     server_url = "http://localhost:5000"  # Local development server URL
@@ -403,19 +449,27 @@ if __name__ == "__main__":
     else:
         print("Sufficient tokens available.")
     folder_path = input("Enter the folder path: ")
-    client.process_folder(folder_path)
-    output_base = "batch_requests"
-    client.create_batch_jsonl(output_base)
-    
-    # Upload each created JSONL file
-    file_index = 1
-    while True:
-        file_path = f"{output_base}_{file_index}.jsonl"
-        if not os.path.exists(file_path):
-            break
-        print(f"Uploading {file_path}...")
-        client.upload_jsonl(file_path)
-        file_index += 1
+    if client.process_folder(folder_path):
+        run_id = uuid.uuid4().hex[:8]  # Generate a unique run ID
+        output_base = f"batch_requests_{run_id}"
+        client.create_batch_jsonl(output_base)
+        
+        # Upload each created JSONL file and remove after uploading
+        file_index = 1
+        while True:
+            file_path = f"{output_base}_{file_index}.jsonl"
+            if not os.path.exists(file_path):
+                break
+            print(f"Uploading {file_path}...")
+            client.upload_jsonl(file_path)
+            try:
+                os.remove(file_path)
+                print(f"Removed batch request file: {file_path}")
+            except OSError as e:
+                print(f"Error removing batch request file {file_path}: {e}")
+            file_index += 1
+    else:
+        print("No batch files were created due to lack of processable images.")
 
     # Check balance after uploading
     client.check_balance()

@@ -8,6 +8,9 @@ from threading import Lock
 import math
 import requests
 from openai import OpenAI
+import csv
+import json
+from batch_logger import BatchLogger  # Import the BatchLogger class
 
 app = Flask(__name__)
 
@@ -202,6 +205,9 @@ def get_user_batch_jobs(user_token):
 def get_user_file_ids(user_token):
     return [job['openai_file_id'] for job in batch_jobs.values() if job['token'] == user_token]
 
+# Initialize the BatchLogger
+batch_logger = BatchLogger()
+
 # Endpoints
 @app.route('/')
 def root():
@@ -328,6 +334,9 @@ def get_batch_status(batch_id):
     
     # Add the user's remaining balance
     response['remaining_balance'] = tokens[user_token]['amount']
+
+    # Log the batch status with enhanced data
+    batch_logger.log_batch_status(batch_id, response, user_token)
 
     return jsonify(response), 200
 

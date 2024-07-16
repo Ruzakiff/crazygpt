@@ -19,6 +19,7 @@ batch_jobs = {}
 # Configuration
 MAX_BATCH_REQUESTS = 50000
 MAX_BATCH_SIZE_MB = 100
+
 # Function to retrieve file content given file_id
 @app.route('/retrieve_file_content/<file_id>', methods=['GET'])
 def retrieve_file_content(file_id):
@@ -33,6 +34,7 @@ def retrieve_file_content(file_id):
             return jsonify({'error': "Unexpected content type"}), 500
     except Exception as e:
         return jsonify({'error': f"Failed to retrieve file content: {str(e)}"}), 500
+
 # Helper functions for batch processing
 def create_openai_batch(file_id, user_token):
     client = OpenAI()
@@ -49,45 +51,6 @@ def create_openai_batch(file_id, user_token):
         return batch
     except Exception as e:
         raise Exception(f"Failed to create OpenAI batch: {str(e)}")
-
-def process_batch(batch_id):
-    batch = batch_jobs[batch_id]
-    
-    # Use the OpenAI client to get the latest batch status
-    client = OpenAI()
-    openai_batch = client.batches.retrieve(batch_id)
-    
-    batch['status'] = openai_batch.status
-    
-    if openai_batch.status == 'completed':
-        # Fetch the results from OpenAI if not already stored
-        if 'decisions' not in batch:
-            output_file = client.files.retrieve(openai_batch.output_file_id)
-            # Process the output file to get decisions
-            # This is a placeholder - you'll need to implement the actual processing
-            batch['decisions'] = process_openai_output(output_file)
-    
-    batch_jobs[batch_id] = batch
-    return batch
-
-def process_openai_output(output_file):
-    # Implement the logic to process the OpenAI output file
-    # and return the decisions in the format your application expects
-    # This is a placeholder implementation
-    return []
-
-def get_batch_result(batch_id):
-    batch = process_batch(batch_id)
-    return {
-        'id': batch['id'],
-        'status': batch['status'],
-        'decisions': batch.get('decisions', []) if batch['status'] == 'completed' else None
-    }
-
-# Mock API endpoint
-def mock_api_decision(file_paths):
-    return [{'file': file_path, 'decision': 'keep' if secrets.randbelow(2) == 0 else 'delete'} 
-            for file_path in file_paths]
 
 # Helper Functions
 def generate_token():
@@ -334,4 +297,3 @@ def get_user_file_ids_route():
 
 if __name__ == '__main__':
     app.run(debug=True)
-    

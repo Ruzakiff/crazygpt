@@ -213,7 +213,7 @@ class DeskClient:
             
             if status['status'] == 'completed':
                 print(f"Batch {batch_id} completed.")
-                self.test_function(status)  # Call the test function
+                self.process_completed_batch(status) 
                 return status
             elif status['status'] in ['failed', 'expired', 'cancelled']:
                 print(f"Batch {batch_id} {status['status']}.")
@@ -224,13 +224,13 @@ class DeskClient:
         print(f"Timeout reached for batch {batch_id}")
         return None
 
-    def test_function(self, batch_data):
+    def process_completed_batch(self, batch_data):
         """
-        Test function to be called when the batch is completed.
+        Process the completed batch data.
         
         :param batch_data: The completed batch data
         """
-        print("Test function called with completed batch data:")
+        print("Processing completed batch data:")
         print(json.dumps(batch_data, indent=2))
         
         # Process the batch data
@@ -314,18 +314,6 @@ class DeskClient:
         else:
             print("Failed to process output file")
 
-    def save_batch_results(self, batch_data):
-        """
-        Save the batch results to a file.
-        
-        :param batch_data: The batch data received from the server
-        :return: The path to the saved file
-        """
-        filename = f"batch_results_{int(time.time())}.json"
-        with open(filename, 'w') as f:
-            json.dump(batch_data, f)
-        print(f"Batch results saved to {filename}")
-        return filename
     def process_batch_results(self, results_file):
         """
         Process the batch results from a JSONL file.
@@ -450,3 +438,4 @@ if __name__ == "__main__":
     client.check_balance()
 
     client.get_file_ids()
+

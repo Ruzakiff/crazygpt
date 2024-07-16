@@ -399,7 +399,7 @@ if __name__ == "__main__":
     client = DeskClient(server_url, user_token=None)
     if client.check_balance() < 10:
         print("Insufficient tokens, purchasing more...")
-        print(client.purchase_tokens(100))  # Assuming purchase_tokens method exists and 100 is the desired amount
+        print(client.purchase_tokens(100))
     else:
         print("Sufficient tokens available.")
     folder_path = input("Enter the folder path: ")
@@ -420,19 +420,23 @@ if __name__ == "__main__":
     # Check balance after uploading
     client.check_balance()
 
-    # Get batch jobs and file IDs
-    client.get_batch_jobs()
-    client.get_file_ids()
+    # Get batch jobs
+    batch_jobs = client.get_batch_jobs()
 
-    #After processing and uploading all batches
-    batch_id = input("Enter the batch ID to poll: ")
-    completed_batch = client.poll_batch_status(batch_id)
-    
-    if completed_batch:
-        print("Batch completed successfully.")
-        # Process the completed batch
+    if batch_jobs:
+        print("Polling all batch jobs...")
+        for job in batch_jobs:
+            batch_id = job['id']
+            print(f"Polling batch job {batch_id}...")
+            completed_batch = client.poll_batch_status(batch_id)
+            
+            if completed_batch:
+                print(f"Batch {batch_id} completed successfully.")
+                # Process the completed batch
+            else:
+                print(f"Batch {batch_id} processing failed or timed out.")
     else:
-        print("Batch processing failed or timed out.")
+        print("No batch jobs found.")
 
     # Check final balance
     client.check_balance()

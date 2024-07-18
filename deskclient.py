@@ -9,6 +9,8 @@ import time
 import io
 import random
 import uuid
+import asyncio
+import aiohttp
 
 register_heif_opener()
 
@@ -439,6 +441,101 @@ class DeskClient:
             print(response.text)
             return None
 
+    async def async_get_batch_status(self, session, batch_id):
+        url = f"{self.server_url}/batches/{batch_id}"
+        headers = {
+            'User-Token': self.user_token
+        }
+        
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                print(f"Failed to get batch status for {batch_id}. Status code: {response.status}")
+                return None
+
+    async def async_poll_batch_status(self, session, batch_id, interval=15, timeout=88200):
+        start_time = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - start_time < timeout:
+            status = await self.async_get_batch_status(session, batch_id)
+            if status is None:
+                await asyncio.sleep(interval)
+                continue
+            
+            if status['status'] == 'completed':
+                print(f"Batch {batch_id} completed.")
+                await self.async_process_completed_batch(session, status)
+                return status
+            elif status['status'] in ['failed', 'expired', 'cancelled']:
+                print(f"Batch {batch_id} {status['status']}.")
+                return None
+            print(f"Batch {batch_id} status: {status['status']}. Waiting {interval} seconds...")
+            await asyncio.sleep(interval)
+        
+        print(f"Timeout reached for batch {batch_id}")
+        return None
+
+    async def async_process_completed_batch(self, session, batch_data):
+        # Similar to process_completed_batch, but use async methods
+        print("Processing completed batch data:")
+        print(json.dumps(batch_data, indent=2))
+        
+        # Process the output file
+        await self.async_process_output_file(session, batch_data['output_file_id'])
+        
+        # After processing, delete the batch files
+        deletion_results = await self.async_delete_batch_files(session, batch_data['id'])
+        if deletion_results:
+            print("Batch files deletion results:")
+            print(json.dumps(deletion_results, indent=2))
+        else:
+            print("Failed to delete batch files.")
+
+    async def async_retrieve_file_content(self, session, file_id):
+        url = f"{self.server_url}/retrieve_file_content/{file_id}"
+        headers = {
+            'User-Token': self.user_token
+        }
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                return await response.text()
+            else:
+                print(f"Failed to retrieve file content. Status code: {response.status}")
+                return None
+
+    async def async_process_output_file(self, session, file_id):
+        content = await self.async_retrieve_file_content(session, file_id)
+        if content is not None:
+            output_filename = f"output_{file_id}.jsonl"
+            with open(output_filename, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"Output file saved as {output_filename}")
+            self.process_batch_results(output_filename)
+            try:
+                os.remove(output_filename)
+                print(f"Removed output file: {output_filename}")
+            except OSError as e:
+                print(f"Error removing output file {output_filename}: {e}")
+        else:
+            print("Failed to process output file")
+
+    async def async_delete_batch_files(self, session, batch_id):
+        url = f"{self.server_url}/delete_batch_files/{batch_id}"
+        headers = {
+            'User-Token': self.user_token
+        }
+        async with session.delete(url, headers=headers) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                print(f"Failed to delete batch files. Status code: {response.status}")
+                return None
+
+    async def async_process_all_batches(self, batch_jobs):
+        async with aiohttp.ClientSession() as session:
+            tasks = [self.async_poll_batch_status(session, job['id']) for job in batch_jobs]
+            await asyncio.gather(*tasks)
+
 # Example usage
 if __name__ == "__main__":
     server_url = "http://localhost:5000"  # Local development server URL
@@ -478,17 +575,8 @@ if __name__ == "__main__":
     batch_jobs = client.get_batch_jobs()
 
     if batch_jobs:
-        print("Polling all batch jobs...")
-        for job in batch_jobs:
-            batch_id = job['id']
-            print(f"Polling batch job {batch_id}...")
-            completed_batch = client.poll_batch_status(batch_id)
-            
-            if completed_batch:
-                print(f"Batch {batch_id} completed successfully.")
-                # Process the completed batch
-            else:
-                print(f"Batch {batch_id} processing failed or timed out.")
+        print("Processing all batch jobs concurrently...")
+        asyncio.run(client.async_process_all_batches(batch_jobs))
     else:
         print("No batch jobs found.")
 

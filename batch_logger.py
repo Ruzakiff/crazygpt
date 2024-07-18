@@ -3,13 +3,28 @@ import os
 from datetime import datetime
 import json
 import time
+import queue
+import threading
 
 class BatchLogger:
     def __init__(self, log_file='batch_status_log.csv'):
         self.log_file = log_file
         self.last_logged_state = {}
+        self.log_queue = queue.Queue()
+        self.worker_thread = threading.Thread(target=self._log_worker, daemon=True)
+        self.worker_thread.start()
 
     def log_batch_status(self, batch_id, status, user_token):
+        # Instead of writing directly, add to queue
+        self.log_queue.put((batch_id, status, user_token))
+
+    def _log_worker(self):
+        while True:
+            batch_id, status, user_token = self.log_queue.get()
+            self._write_log(batch_id, status, user_token)
+            self.log_queue.task_done()
+
+    def _write_log(self, batch_id, status, user_token):
         file_exists = os.path.isfile(self.log_file)
         
         current_time = time.time()

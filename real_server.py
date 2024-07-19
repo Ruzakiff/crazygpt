@@ -14,6 +14,10 @@ from batch_logger import BatchLogger  # Import the BatchLogger class
 
 app = Flask(__name__)
 
+# All locks declared at the top
+token_lock = Lock()
+rate_limit_lock = Lock()
+
 # In-memory storage for tokens and usage
 tokens = {}
 rate_limits = {}
@@ -147,8 +151,6 @@ def validate_token(token):
     return False
 
 # Rate limiting with thread-safe operations
-rate_limit_lock = Lock()
-
 def rate_limited(token):
     current_time = int(time.time())
     with rate_limit_lock:
@@ -156,7 +158,7 @@ def rate_limited(token):
             rate_limits[token] = [current_time]
             return False
         
-        # Allow 5 requests per minute
+        # Allow 5 requests per minute per token
         rate_limits[token] = [t for t in rate_limits[token] if current_time - t < 60]
         if len(rate_limits[token]) >= 5:
             return True
@@ -226,12 +228,15 @@ def purchase_tokens():
 def check_balance():
     data = request.json
     user_token = data.get('user_token')
+    if not user_token or not validate_token(user_token):
+        return jsonify({'error': 'Invalid or expired token'}), 400
+    if rate_limited(user_token):
+        return jsonify({'error': 'Rate limit exceeded for this token'}), 429
+
     if user_token in tokens:
         return jsonify({'balance': tokens[user_token]['amount']}), 200
     else:
         return jsonify({'error': 'Invalid token'}), 400
-
-token_lock = Lock()
 
 @app.route('/upload_jsonl', methods=['POST'])
 def upload_jsonl():
@@ -239,8 +244,8 @@ def upload_jsonl():
     if not user_token or not validate_token(user_token):
         return jsonify({'error': 'Invalid or expired token'}), 400
     if rate_limited(user_token):
-        return jsonify({'error': 'Rate limit exceeded'}), 429
-
+        return jsonify({'error': 'Rate limit exceeded for this token'}), 429
+    
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
     

@@ -110,6 +110,7 @@ class MainWindow(QMainWindow):
         # Create and add pages
         self.create_upload_page()
         self.create_batch_status_page()
+        self.create_batch_details_page()  # Add this line
 
         # Create sidebar buttons
         self.create_sidebar_button("Upload", "upload_icon.png", 0)
@@ -174,12 +175,41 @@ class MainWindow(QMainWindow):
 
         self.stacked_widget.addWidget(status_widget)
 
+    def create_batch_details_page(self):
+        self.batch_details_widget = QWidget()
+        layout = QVBoxLayout(self.batch_details_widget)
+
+        self.batch_id_label = QLabel()
+        layout.addWidget(self.batch_id_label)
+
+        self.file_list = QListWidget()
+        layout.addWidget(self.file_list)
+
+        back_button = QPushButton("Back to Batch Status")
+        back_button.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(1))  # Assuming Batch Status is index 1
+        layout.addWidget(back_button)
+
+        self.stacked_widget.addWidget(self.batch_details_widget)
+
     def show_batch_details(self, item):
         row = item.row()
         batch_id = self.status_table.item(row, 0).text()
         
-        dialog = BatchDetailsDialog(self, batch_id)
-        dialog.exec()
+        self.batch_id_label.setText(f"Batch ID: {batch_id}")
+        self.load_file_paths(batch_id)
+        self.stacked_widget.setCurrentWidget(self.batch_details_widget)
+
+    def load_file_paths(self, batch_id):
+        self.file_list.clear()
+        file_path = f"pending_batches/{batch_id}.jsonl"
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as f:
+                for line in f:
+                    data = json.loads(line)
+                    file_path = data.get('custom_id', 'Unknown file path')
+                    self.file_list.addItem(file_path)
+        else:
+            self.file_list.addItem("No file paths found for this batch.")
 
     def update_batch_status(self):
         self.batch_status_thread = BatchStatusThread(self.client)
@@ -251,34 +281,6 @@ class MainWindow(QMainWindow):
         self.poll_thread.quit()
         self.poll_thread.wait()
         self.update_batch_status()
-
-class BatchDetailsDialog(QDialog):
-    def __init__(self, parent, batch_id):
-        super().__init__(parent)
-        self.setWindowTitle(f"Batch Details: {batch_id}")
-        self.setGeometry(200, 200, 400, 300)
-
-        layout = QVBoxLayout(self)
-
-        self.file_list = QListWidget()
-        layout.addWidget(self.file_list)
-
-        close_button = QPushButton("Close")
-        close_button.clicked.connect(self.close)
-        layout.addWidget(close_button)
-
-        self.load_file_paths(batch_id)
-
-    def load_file_paths(self, batch_id):
-        file_path = f"pending_batches/{batch_id}.jsonl"
-        if os.path.exists(file_path):
-            with open(file_path, 'r') as f:
-                for line in f:
-                    data = json.loads(line)
-                    file_path = data.get('custom_id', 'Unknown file path')
-                    self.file_list.addItem(file_path)
-        else:
-            self.file_list.addItem("No file paths found for this batch.")
 
 class DragDropArea(QLabel):
     def __init__(self, main_window):

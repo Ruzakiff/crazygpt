@@ -539,12 +539,14 @@ class DeskClient:
 # Example usage
 if __name__ == "__main__":
     server_url = "http://localhost:5000"  # Local development server URL
-    client = DeskClient(server_url, user_token=None)
+    client = DeskClient(server_url, user_token='x9z0oeGLYu36GQqAjte8kg')
     if client.check_balance() < 10:
         print("Insufficient tokens, purchasing more...")
         print(client.purchase_tokens(100))
     else:
         print("Sufficient tokens available.")
+        batch_jobs = client.get_batch_jobs()
+        client.get_file_ids()
     folder_path = input("Enter the folder path: ")
     if client.process_folder(folder_path):
         run_id = uuid.uuid4().hex[:8]  # Generate a unique run ID
@@ -571,6 +573,7 @@ if __name__ == "__main__":
     # Check balance after uploading
     client.check_balance()
 
+    client.get_file_ids()
     # Get batch jobs
     batch_jobs = client.get_batch_jobs()
 

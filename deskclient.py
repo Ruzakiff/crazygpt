@@ -5,6 +5,7 @@ import requests
 from typing import List, Dict
 from PIL import Image
 from pillow_heif import register_heif_opener
+
 import time
 import io
 import random
@@ -23,7 +24,6 @@ class DeskClient:
         self.requests = []
         self.server_url = server_url
         self.user_token = user_token
-        self.batch_file_map = {}  # New attribute to store batch_id to file mapping
 
     def process_folder(self, folder_path: str):
         # Clear previous requests
@@ -143,12 +143,10 @@ class DeskClient:
             batch_id = batch_data.get('batch_id')
             if batch_id:
                 print(f"Upload successful. Batch ID: {batch_id}")
-                # Store the mapping of batch_id to file_path
-                self.batch_file_map[batch_id] = file_path
-                # Move the file to a 'pending' directory instead of deleting it
+                # Move the file to a 'pending_batches' directory and rename it to the batch_id
                 pending_dir = "pending_batches"
                 os.makedirs(pending_dir, exist_ok=True)
-                pending_path = os.path.join(pending_dir, f"{batch_id}_{os.path.basename(file_path)}")
+                pending_path = os.path.join(pending_dir, f"{batch_id}.jsonl")
                 shutil.move(file_path, pending_path)
                 print(f"Moved batch file to: {pending_path}")
             else:
@@ -298,19 +296,14 @@ class DeskClient:
             print("Failed to delete batch files.")
 
         batch_id = batch_data['id']
-        if batch_id in self.batch_file_map:
-            original_file = self.batch_file_map[batch_id]
-            pending_file = os.path.join("pending_batches", f"{batch_id}_{os.path.basename(original_file)}")
-            if os.path.exists(pending_file):
-                print(f"Processing completed batch {batch_id}. Original file: {original_file}")
-                # Here you can process the file if needed
-                os.remove(pending_file)
-                print(f"Removed pending batch file: {pending_file}")
-            else:
-                print(f"Pending file for batch {batch_id} not found: {pending_file}")
-            del self.batch_file_map[batch_id]
+        pending_file = os.path.join("pending_batches", f"{batch_id}.jsonl")
+        if os.path.exists(pending_file):
+            print(f"Processing completed batch {batch_id}.")
+            # Here you can process the file if needed
+            os.remove(pending_file)
+            print(f"Removed pending batch file: {pending_file}")
         else:
-            print(f"No file mapping found for batch {batch_id}")
+            print(f"Pending file for batch {batch_id} not found: {pending_file}")
 
     def retrieve_file_content(self, file_id):
         """
@@ -566,21 +559,10 @@ class DeskClient:
             tasks = [self.async_poll_batch_status(session, job['id']) for job in batch_jobs]
             await asyncio.gather(*tasks)
 
-    # Add methods to save and load the batch_file_map
-    def save_batch_file_map(self):
-        with open('batch_file_map.json', 'w') as f:
-            json.dump(self.batch_file_map, f)
-
-    def load_batch_file_map(self):
-        if os.path.exists('batch_file_map.json'):
-            with open('batch_file_map.json', 'r') as f:
-                self.batch_file_map = json.load(f)
-
 # Example usage
 if __name__ == "__main__":
     server_url = "http://localhost:5000"  # Local development server URL
     client = DeskClient(server_url, user_token='x9z0oeGLYu36GQqAjte8kg')
-    client.load_batch_file_map()  # Load any existing batch-file mappings
     
     if client.check_balance() < 10:
         print("Insufficient tokens, purchasing more...")
@@ -624,5 +606,4 @@ if __name__ == "__main__":
     client.check_balance()
 
     client.get_file_ids()
-    client.save_batch_file_map()  # Save the updated batch-file mappings
 

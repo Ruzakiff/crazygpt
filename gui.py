@@ -2,9 +2,10 @@ import sys
 import os
 import uuid
 import asyncio
+import json
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QTextEdit, QProgressBar, QStackedWidget, 
-                             QTableWidget, QTableWidgetItem, QHeaderView)
+                             QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QListWidget)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QObject
 from PyQt6.QtGui import QIcon, QDragEnterEvent, QDropEvent
 
@@ -164,6 +165,7 @@ class MainWindow(QMainWindow):
         self.status_table.setHorizontalHeaderLabels(["Batch ID", "Status", "Created At", "Completed At"])
         self.status_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.status_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # Make table non-editable
+        self.status_table.itemDoubleClicked.connect(self.show_batch_details)  # Add this line
         layout.addWidget(self.status_table)
 
         refresh_button = QPushButton("Refresh Status")
@@ -171,6 +173,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(refresh_button)
 
         self.stacked_widget.addWidget(status_widget)
+
+    def show_batch_details(self, item):
+        row = item.row()
+        batch_id = self.status_table.item(row, 0).text()
+        
+        dialog = BatchDetailsDialog(self, batch_id)
+        dialog.exec()
 
     def update_batch_status(self):
         self.batch_status_thread = BatchStatusThread(self.client)
@@ -242,6 +251,34 @@ class MainWindow(QMainWindow):
         self.poll_thread.quit()
         self.poll_thread.wait()
         self.update_batch_status()
+
+class BatchDetailsDialog(QDialog):
+    def __init__(self, parent, batch_id):
+        super().__init__(parent)
+        self.setWindowTitle(f"Batch Details: {batch_id}")
+        self.setGeometry(200, 200, 400, 300)
+
+        layout = QVBoxLayout(self)
+
+        self.file_list = QListWidget()
+        layout.addWidget(self.file_list)
+
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.close)
+        layout.addWidget(close_button)
+
+        self.load_file_paths(batch_id)
+
+    def load_file_paths(self, batch_id):
+        file_path = f"pending_batches/{batch_id}.jsonl"
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as f:
+                for line in f:
+                    data = json.loads(line)
+                    file_path = data.get('custom_id', 'Unknown file path')
+                    self.file_list.addItem(file_path)
+        else:
+            self.file_list.addItem("No file paths found for this batch.")
 
 class DragDropArea(QLabel):
     def __init__(self, main_window):

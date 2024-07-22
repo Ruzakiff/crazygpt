@@ -11,6 +11,7 @@ import random
 import uuid
 import asyncio
 import aiohttp
+import shutil
 
 register_heif_opener()
 
@@ -22,6 +23,7 @@ class DeskClient:
         self.requests = []
         self.server_url = server_url
         self.user_token = user_token
+        self.batch_file_map = {}  # New attribute to store batch_id to file mapping
 
     def process_folder(self, folder_path: str):
         # Clear previous requests
@@ -137,11 +139,24 @@ class DeskClient:
             response = requests.post(url, headers=headers, files=files)
         
         if response.status_code == 202:
-            print("Upload successful:")
-            print(json.dumps(response.json(), indent=2))
+            batch_data = response.json()
+            batch_id = batch_data.get('batch_id')
+            if batch_id:
+                print(f"Upload successful. Batch ID: {batch_id}")
+                # Store the mapping of batch_id to file_path
+                self.batch_file_map[batch_id] = file_path
+                # Move the file to a 'pending' directory instead of deleting it
+                pending_dir = "pending_batches"
+                os.makedirs(pending_dir, exist_ok=True)
+                pending_path = os.path.join(pending_dir, f"{batch_id}_{os.path.basename(file_path)}")
+                shutil.move(file_path, pending_path)
+                print(f"Moved batch file to: {pending_path}")
+            else:
+                print("Upload successful, but no batch ID received.")
+            print(json.dumps(batch_data, indent=2))
         else:
             print(f"Upload failed with status code {response.status_code}:")
-            print(json.dumps(response.json(), indent=2))
+            print(response.text)
 
     @staticmethod
     def is_image(file_path: str) -> bool:
@@ -281,6 +296,21 @@ class DeskClient:
             print(json.dumps(deletion_results, indent=2))
         else:
             print("Failed to delete batch files.")
+
+        batch_id = batch_data['id']
+        if batch_id in self.batch_file_map:
+            original_file = self.batch_file_map[batch_id]
+            pending_file = os.path.join("pending_batches", f"{batch_id}_{os.path.basename(original_file)}")
+            if os.path.exists(pending_file):
+                print(f"Processing completed batch {batch_id}. Original file: {original_file}")
+                # Here you can process the file if needed
+                os.remove(pending_file)
+                print(f"Removed pending batch file: {pending_file}")
+            else:
+                print(f"Pending file for batch {batch_id} not found: {pending_file}")
+            del self.batch_file_map[batch_id]
+        else:
+            print(f"No file mapping found for batch {batch_id}")
 
     def retrieve_file_content(self, file_id):
         """
@@ -536,10 +566,22 @@ class DeskClient:
             tasks = [self.async_poll_batch_status(session, job['id']) for job in batch_jobs]
             await asyncio.gather(*tasks)
 
+    # Add methods to save and load the batch_file_map
+    def save_batch_file_map(self):
+        with open('batch_file_map.json', 'w') as f:
+            json.dump(self.batch_file_map, f)
+
+    def load_batch_file_map(self):
+        if os.path.exists('batch_file_map.json'):
+            with open('batch_file_map.json', 'r') as f:
+                self.batch_file_map = json.load(f)
+
 # Example usage
 if __name__ == "__main__":
     server_url = "http://localhost:5000"  # Local development server URL
     client = DeskClient(server_url, user_token='x9z0oeGLYu36GQqAjte8kg')
+    client.load_batch_file_map()  # Load any existing batch-file mappings
+    
     if client.check_balance() < 10:
         print("Insufficient tokens, purchasing more...")
         print(client.purchase_tokens(100))
@@ -561,11 +603,6 @@ if __name__ == "__main__":
                 break
             print(f"Uploading {file_path}...")
             client.upload_jsonl(file_path)
-            try:
-                os.remove(file_path)
-                print(f"Removed batch request file: {file_path}")
-            except OSError as e:
-                print(f"Error removing batch request file {file_path}: {e}")
             file_index += 1
     else:
         print("No batch files were created due to lack of processable images.")
@@ -587,4 +624,5 @@ if __name__ == "__main__":
     client.check_balance()
 
     client.get_file_ids()
+    client.save_batch_file_map()  # Save the updated batch-file mappings
 

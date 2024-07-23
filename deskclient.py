@@ -499,20 +499,27 @@ class DeskClient:
         return None
 
     async def async_process_completed_batch(self, session, batch_data):
-        # Similar to process_completed_batch, but use async methods
         print("Processing completed batch data:")
         print(json.dumps(batch_data, indent=2))
         
         # Process the output file
-        await self.async_process_output_file(session, batch_data['output_file_id'])
+        output_filename = await self.async_process_output_file(session, batch_data['output_file_id'])
         
-        # After processing, delete the batch files
+        if output_filename:
+            # Move the output file to a 'completed_results' folder
+            completed_dir = "completed_results"
+            os.makedirs(completed_dir, exist_ok=True)
+            completed_path = os.path.join(completed_dir, f"completed_{batch_data['id']}.jsonl")
+            shutil.move(output_filename, completed_path)
+            print(f"Moved completed results to: {completed_path}")
+        
+        # After processing, delete the batch files on the server
         deletion_results = await self.async_delete_batch_files(session, batch_data['id'])
         if deletion_results:
             print("Batch files deletion results:")
             print(json.dumps(deletion_results, indent=2))
         else:
-            print("Failed to delete batch files.")
+            print("Failed to delete batch files on the server.")
 
     async def async_retrieve_file_content(self, session, file_id):
         url = f"{self.server_url}/retrieve_file_content/{file_id}"
@@ -534,13 +541,10 @@ class DeskClient:
                 f.write(content)
             print(f"Output file saved as {output_filename}")
             self.process_batch_results(output_filename)
-            try:
-                os.remove(output_filename)
-                print(f"Removed output file: {output_filename}")
-            except OSError as e:
-                print(f"Error removing output file {output_filename}: {e}")
+            return output_filename
         else:
             print("Failed to process output file")
+            return None
 
     async def async_delete_batch_files(self, session, batch_id):
         url = f"{self.server_url}/delete_batch_files/{batch_id}"

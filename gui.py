@@ -5,7 +5,8 @@ import asyncio
 import json
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QTextEdit, QProgressBar, QStackedWidget, 
-                             QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QListWidget)
+                             QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QListWidget,
+                             QComboBox)  # Add QComboBox to the imports
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QObject
 from PyQt6.QtGui import QIcon, QDragEnterEvent, QDropEvent
 
@@ -19,6 +20,13 @@ class WorkerThread(QThread):
         super().__init__()
         self.client = client
         self.run_id = run_id
+        self.starter_prompts = [
+            "Output KEEP for landscape images, DELETE otherwise.",
+            "Output KEEP for images containing text, DELETE otherwise.",
+            "Output KEEP for images of buildings or architecture, DELETE otherwise.",
+            "Output KEEP for images without people, DELETE otherwise.",
+            "Output KEEP for images with vibrant colors, DELETE otherwise.",
+        ]
 
     def run(self):
         output_base = f"batch_requests_{self.run_id}"
@@ -94,6 +102,15 @@ class MainWindow(QMainWindow):
 
         self.client = DeskClient("http://localhost:5000", user_token='x9z0oeGLYu36GQqAjte8kg')
 
+        # Initialize prompt_options as a dictionary
+        self.prompt_options = {
+            "Print-worthy photos": "Analyze this image for a personal photo collection and determine if it should be printed. Output KEEP if the image is worth printing, or DELETE if it's not suitable for printing. Consider factors such as image quality, visual appeal, and personal significance when making your decision.",
+            "Images with text": "Output KEEP for images containing text, DELETE otherwise.",
+            "Architecture photos": "Output KEEP for images of buildings or architecture, DELETE otherwise.",
+            "Images without people": "Output KEEP for images without people, DELETE otherwise.",
+            "Vibrant color images": "Output KEEP for images with vibrant colors, DELETE otherwise.",
+        }
+
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QHBoxLayout(main_widget)
@@ -144,6 +161,28 @@ class MainWindow(QMainWindow):
         self.drag_drop_area = DragDropArea(self)
         layout.addWidget(self.drag_drop_area)
 
+        # Add custom prompt section
+        prompt_layout = QHBoxLayout()
+        self.custom_prompt_label = QLabel("Custom Prompt:")
+        prompt_layout.addWidget(self.custom_prompt_label)
+
+        self.prompt_dropdown = QComboBox()
+        self.prompt_dropdown.addItem("Select a prompt type...")
+        self.prompt_dropdown.addItems(self.prompt_options.keys())
+        self.prompt_dropdown.currentIndexChanged.connect(self.update_custom_prompt)
+        prompt_layout.addWidget(self.prompt_dropdown)
+
+        layout.addLayout(prompt_layout)
+
+        self.custom_prompt_text = QTextEdit()
+        self.custom_prompt_text.setPlaceholderText("Enter your custom prompt here...")
+        self.custom_prompt_text.setMaximumHeight(100)
+        layout.addWidget(self.custom_prompt_text)
+
+        # Set default prompt
+        default_prompt = "Output DELETE for images containing women, girls, or animals. Output DELETE for images that may seem controversial or disrespectful. Output KEEP for all other images."
+        self.custom_prompt_text.setPlainText(default_prompt)
+
         self.log_area = QTextEdit()
         self.log_area.setReadOnly(True)
         layout.addWidget(self.log_area)
@@ -156,6 +195,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.upload_button)
 
         self.stacked_widget.addWidget(upload_widget)
+
+    def update_custom_prompt(self, index):
+        if index > 0:  # Ignore the "Select a prompt type..." option
+            selected_description = self.prompt_dropdown.currentText()
+            selected_prompt = self.prompt_options[selected_description]
+            self.custom_prompt_text.setPlainText(selected_prompt)
 
     def create_batch_status_page(self):
         status_widget = QWidget()
@@ -235,15 +280,17 @@ class MainWindow(QMainWindow):
 
     def process_file(self, file_path):
         self.log(f"Processing file: {file_path}")
+        custom_prompt = self.custom_prompt_text.toPlainText()
         if self.client.is_image(file_path):
-            self.client.process_image(file_path)
+            self.client.process_image(file_path, custom_prompt)
             self.log("File added to queue")
         else:
             self.log("Not a valid image file")
 
     def process_folder(self, folder_path):
         self.log(f"Processing folder: {folder_path}")
-        if self.client.process_folder(folder_path):
+        custom_prompt = self.custom_prompt_text.toPlainText()
+        if self.client.process_folder(folder_path, custom_prompt):
             self.log("Folder processed successfully")
         else:
             self.log("Failed to process folder")

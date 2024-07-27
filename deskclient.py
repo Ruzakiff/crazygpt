@@ -25,7 +25,7 @@ class DeskClient:
         self.server_url = server_url
         self.user_token = user_token
 
-    def process_folder(self, folder_path: str):
+    def process_folder(self, folder_path: str, custom_prompt: str):
         # Clear previous requests
         self.requests = []
 
@@ -38,7 +38,7 @@ class DeskClient:
             file_path = os.path.join(folder_path, filename)
             if os.path.isfile(file_path) and self.is_image(file_path):
                 print(f"Processing image: {filename}")
-                self.process_image(file_path)
+                self.process_image(file_path, custom_prompt)
                 processed_images += 1
 
         if processed_images == 0:
@@ -47,7 +47,7 @@ class DeskClient:
 
         return True
 
-    def process_image(self, file_path: str):
+    def process_image(self, file_path: str, custom_prompt: str):
         original_path = file_path
         if file_path.lower().endswith('.heic'):
             file_path = self.convert_heic_to_jpg(file_path)
@@ -57,6 +57,10 @@ class DeskClient:
 
         # Use the full original path in the custom_id
         custom_id = f"request-{original_path}"
+        
+        # Sanitize and align the custom prompt
+        sanitized_prompt = f"{custom_prompt.strip()} Based on this prompt and the image, respond with ONLY 'KEEP' or 'DELETE'."
+        
         self.add_request(
             custom_id=custom_id,
             method="POST",
@@ -65,11 +69,15 @@ class DeskClient:
                 "model": "gpt-4o",
                 "messages": [
                     {
+                        "role": "system",
+                        "content": "Classify image, ONLY respond with 'KEEP' or 'DELETE'. Do not explain your decision or provide any other output."
+                    },
+                    {
                         "role": "user",
                         "content": [
                             {
                                 "type": "text",
-                                "text": "DELETE all photos of woman/girls and animals. Include to be deleted images that may seem controversial and disrepectful in the eyes of my controlling girlfriend. output only either DELETE OR KEEP"
+                                "text": sanitized_prompt
                             },
                             {
                                 "type": "image_url",
@@ -80,7 +88,7 @@ class DeskClient:
                         ]
                     }
                 ],
-                "max_tokens": 256,
+                "max_tokens": 1,  # Limit the response to a single token
                 "temperature": 0,
                 "top_p": 1,
                 "frequency_penalty": 0,
@@ -396,8 +404,7 @@ class DeskClient:
         # Determine the action based on the content
         action = content.strip().upper()
         
-        # Report the status
-        print(f"Image {filepath}: {action}")
+        # Report the        print(f"Image {filepath}: {action}")
 
         # If you want to perform actions based on the status:
         if action == 'DELETE':
@@ -575,8 +582,13 @@ if __name__ == "__main__":
         print("Sufficient tokens available.")
         batch_jobs = client.get_batch_jobs()
         client.get_file_ids()
+    
     folder_path = input("Enter the folder path: ")
-    if client.process_folder(folder_path):
+    custom_prompt = input("Enter your custom prompt (or press Enter for default): ")
+    if not custom_prompt:
+        custom_prompt = "Analyze this image. DELETE all photos of woman/girls and animals. Include to be deleted images that may seem controversial and disrespectful."
+    
+    if client.process_folder(folder_path, custom_prompt):
         run_id = uuid.uuid4().hex[:8]  # Generate a unique run ID
         output_base = f"batch_requests_{run_id}"
         client.create_batch_jsonl(output_base)

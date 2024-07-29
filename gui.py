@@ -1,98 +1,20 @@
 import sys
 import os
 import uuid
-import asyncio
 import json
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QTextEdit, QProgressBar, QStackedWidget, 
-                             QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QListWidget,
-                             QComboBox)  # Add QComboBox to the imports
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QObject
-from PyQt6.QtGui import QIcon, QDragEnterEvent, QDropEvent
+                             QTableWidget, QTableWidgetItem, QHeaderView, QListWidget,
+                             QComboBox)
+from PyQt6.QtCore import Qt, QTimer, QSize, QThread
+from PyQt6.QtGui import QIcon
 
 from deskclient import DeskClient
-
-class WorkerThread(QThread):
-    update_signal = pyqtSignal(str)
-    finished_signal = pyqtSignal()
-
-    def __init__(self, client, run_id):
-        super().__init__()
-        self.client = client
-        self.run_id = run_id
-        self.starter_prompts = [
-            "Output KEEP for landscape images, DELETE otherwise.",
-            "Output KEEP for images containing text, DELETE otherwise.",
-            "Output KEEP for images of buildings or architecture, DELETE otherwise.",
-            "Output KEEP for images without people, DELETE otherwise.",
-            "Output KEEP for images with vibrant colors, DELETE otherwise.",
-        ]
-
-    def run(self):
-        output_base = f"batch_requests_{self.run_id}"
-        self.client.create_batch_jsonl(output_base)
-        
-        file_index = 1
-        while True:
-            file_path = f"{output_base}_{file_index}.jsonl"
-            if not os.path.exists(file_path):
-                break
-            self.update_signal.emit(f"Uploading {file_path}...")
-            self.client.upload_jsonl(file_path)
-            try:
-                os.remove(file_path)
-                self.update_signal.emit(f"Removed batch request file: {file_path}")
-            except OSError as e:
-                self.update_signal.emit(f"Error removing batch request file {file_path}: {e}")
-            file_index += 1
-
-        self.update_signal.emit("Upload complete")
-        balance = self.client.check_balance()
-        self.update_signal.emit(f"Current balance: {balance}")
-
-        batch_jobs = self.client.get_batch_jobs()
-        if batch_jobs:
-            self.update_signal.emit("Processing all batch jobs concurrently...")
-            asyncio.run(self.client.async_process_all_batches(batch_jobs))
-        else:
-            self.update_signal.emit("No batch jobs found.")
-
-        final_balance = self.client.check_balance()
-        self.update_signal.emit(f"Final balance: {final_balance}")
-
-        self.finished_signal.emit()
-
-class BatchStatusThread(QThread):
-    update_signal = pyqtSignal(list)
-
-    def __init__(self, client):
-        super().__init__()
-        self.client = client
-
-    def run(self):
-        batch_jobs = self.client.get_batch_jobs()
-        self.update_signal.emit(batch_jobs)
-
-class BatchPollWorker(QObject):
-    update_signal = pyqtSignal(str)
-    finished_signal = pyqtSignal()
-
-    def __init__(self, client):
-        super().__init__()
-        self.client = client
-
-    def run(self):
-        batch_jobs = self.client.get_batch_jobs()
-        incomplete_jobs = [job for job in batch_jobs if job['status'] != 'completed']
-        
-        if incomplete_jobs:
-            self.update_signal.emit(f"Found {len(incomplete_jobs)} incomplete batch jobs. Processing...")
-            asyncio.run(self.client.async_process_all_batches(incomplete_jobs))
-            self.update_signal.emit("Finished processing incomplete batch jobs.")
-        else:
-            self.update_signal.emit("No incomplete batch jobs found.")
-        
-        self.finished_signal.emit()
+from worker_thread import WorkerThread
+from batch_status_thread import BatchStatusThread
+from batch_poll_worker import BatchPollWorker
+from drag_drop_area import DragDropArea
+from completed_tab import CompletedBatchResultsWidget  # Add this import
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -100,7 +22,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("DeskClient GUI")
         self.setGeometry(100, 100, 1000, 600)
 
-        self.client = DeskClient("http://localhost:5000", user_token='x9z0oeGLYu36GQqAjte8kg')
+        # Update this line with a valid token
+        self.client = DeskClient("http://localhost:5000", user_token='your_valid_token_here')
 
         # Initialize prompt_options as a dictionary
         self.prompt_options = {
@@ -111,15 +34,22 @@ class MainWindow(QMainWindow):
             "Vibrant color images": "Output KEEP for images with vibrant colors, DELETE otherwise.",
         }
 
+        self.setup_ui()
+        self.check_balance()
+        self.poll_incomplete_jobs()
+
+        # Set up timer to update batch status every 30 seconds
+        self.status_timer = QTimer(self)
+        self.status_timer.timeout.connect(self.update_batch_status)
+        self.status_timer.start(30000)  # 30 seconds
+
+    def setup_ui(self):
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QHBoxLayout(main_widget)
 
         # Create sidebar
-        self.sidebar = QWidget()
-        self.sidebar.setFixedWidth(200)
-        self.sidebar_layout = QVBoxLayout(self.sidebar)
-        self.sidebar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.create_sidebar()
 
         # Create stacked widget for main content
         self.stacked_widget = QStackedWidget()
@@ -127,24 +57,22 @@ class MainWindow(QMainWindow):
         # Create and add pages
         self.create_upload_page()
         self.create_batch_status_page()
-        self.create_batch_details_page()  # Add this line
-
-        # Create sidebar buttons
-        self.create_sidebar_button("Upload", "upload_icon.png", 0)
-        self.create_sidebar_button("Batch Status", "status_icon.png", 1)
+        self.create_batch_details_page()
+        self.create_completed_results_page()  # Add this line
 
         main_layout.addWidget(self.sidebar)
         main_layout.addWidget(self.stacked_widget)
 
-        self.check_balance()
+    def create_sidebar(self):
+        self.sidebar = QWidget()
+        self.sidebar.setFixedWidth(200)
+        self.sidebar_layout = QVBoxLayout(self.sidebar)
+        self.sidebar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        # Start polling for incomplete batch jobs
-        self.poll_incomplete_jobs()
-
-        # Set up timer to update batch status every 30 seconds
-        self.status_timer = QTimer(self)
-        self.status_timer.timeout.connect(self.update_batch_status)
-        self.status_timer.start(30000)  # 30 seconds
+        # Create sidebar buttons
+        self.create_sidebar_button("Upload", "upload_icon.png", 0)
+        self.create_sidebar_button("Batch Status", "status_icon.png", 1)
+        self.create_sidebar_button("Completed Results", "results_icon.png", 3)  # Add this line
 
     def create_sidebar_button(self, text, icon_path, page_index):
         button = QPushButton(text)
@@ -211,7 +139,7 @@ class MainWindow(QMainWindow):
         self.status_table.setHorizontalHeaderLabels(["Batch ID", "Status", "Created At", "Completed At"])
         self.status_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.status_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # Make table non-editable
-        self.status_table.itemDoubleClicked.connect(self.show_batch_details)  # Add this line
+        self.status_table.itemDoubleClicked.connect(self.show_batch_details)
         layout.addWidget(self.status_table)
 
         refresh_button = QPushButton("Refresh Status")
@@ -329,34 +257,9 @@ class MainWindow(QMainWindow):
         self.poll_thread.wait()
         self.update_batch_status()
 
-class DragDropArea(QLabel):
-    def __init__(self, main_window):
-        super().__init__(main_window)
-        self.main_window = main_window
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setText("Drag and drop files or folders here")
-        self.setStyleSheet("""
-            QLabel {
-                border: 2px dashed #aaa;
-                border-radius: 5px;
-                padding: 20px;
-                background-color: #f0f0f0;
-                color: black;
-            }
-        """)
-        self.setAcceptDrops(True)
-
-    def dragEnterEvent(self, event: QDragEnterEvent):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-
-    def dropEvent(self, event: QDropEvent):
-        for url in event.mimeData().urls():
-            file_path = url.toLocalFile()
-            if os.path.isfile(file_path):
-                self.main_window.process_file(file_path)
-            elif os.path.isdir(file_path):
-                self.main_window.process_folder(file_path)
+    def create_completed_results_page(self):
+        self.completed_results_widget = CompletedBatchResultsWidget()
+        self.stacked_widget.addWidget(self.completed_results_widget)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

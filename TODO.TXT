@@ -1,0 +1,4 @@
+openai api key make it easy to set? for own users
+
+
+upload tab differentiate between upload button!

@@ -1,7 +1,7 @@
 import json
 import os
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, 
-                             QHeaderView, QPushButton, QLabel, QSplitter)
+                             QHeaderView, QPushButton, QLabel, QSplitter, QMessageBox)
 from PyQt6.QtCore import Qt, pyqtSignal, QFileSystemWatcher
 from PyQt6.QtGui import QColor
 
@@ -136,6 +136,31 @@ class CompletedBatchResultsWidget(QWidget):
         self.results_table.setItem(row, 2, QTableWidgetItem(decision))
         self.results_table.item(row, 2).setBackground(QColor('lightgreen' if decision == "KEEP" else 'lightcoral'))
         self.decision_made.emit(custom_id, content, decision)
+        
+        # Apply the suggestion immediately
+        success = self.apply_suggestion_to_file(custom_id, content, decision)
+        if not success:
+            QMessageBox.warning(self, "Processing Error", f"Failed to process suggestion for {custom_id}")
+
+    def apply_suggestion_to_file(self, custom_id, content, decision):
+        try:
+            # Assuming the custom_id is the file path
+            file_path = custom_id.split("-", 1)[1] if "-" in custom_id else custom_id
+            if decision == "DELETE":
+                if os.path.exists(file_path):
+                    print("DELLLLL")
+                    #os.remove(file_path)
+                return True
+            # elif decision == "KEEP":
+            #     with open(file_path, 'w') as file:
+            #         file.write(content)
+            #     return True
+            else:
+                print(f"Unknown decision '{decision}' for file: {file_path}")
+                return False
+        except Exception as e:
+            print(f"Error processing file {custom_id}: {str(e)}")
+            return False
 
     def make_decision(self, decision):
         current_row = self.results_table.currentRow()

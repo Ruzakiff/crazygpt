@@ -12,6 +12,13 @@ import csv
 import json
 import sqlite3
 from batch_logger import BatchLogger  # Import the BatchLogger class
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Set OpenAI API key as an environment variable
+os.environ['OPENAI_API_KEY'] = os.getenv('OPENAI_API_KEY')
 
 app = Flask(__name__)
 
@@ -198,12 +205,8 @@ def upload_file_to_openai(file):
     Returns:
     dict: OpenAI API response containing file information
     """
-    openai_api_key = os.environ.get('OPENAI_API_KEY')
-    if not openai_api_key:
-        raise ValueError('OpenAI API key not configured')
-
     headers = {
-        "Authorization": f"Bearer {openai_api_key}"
+        "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}"
     }
     files = {
         'file': (file.filename, file.stream, 'application/octet-stream'),

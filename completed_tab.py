@@ -2,7 +2,7 @@ import json
 import os
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, 
                              QHeaderView, QPushButton, QLabel, QSplitter)
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QFileSystemWatcher
 from PyQt6.QtGui import QColor
 
 class CompletedBatchResultsWidget(QWidget):
@@ -13,6 +13,7 @@ class CompletedBatchResultsWidget(QWidget):
         super().__init__(parent)
         self.init_ui()
         self.current_batch_id = None
+        self.setup_file_watcher()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -66,6 +67,17 @@ class CompletedBatchResultsWidget(QWidget):
         # Load batch files
         self.load_batch_files()
 
+    def setup_file_watcher(self):
+        self.file_watcher = QFileSystemWatcher(self)
+        self.file_watcher.addPath("completed_results")
+        self.file_watcher.directoryChanged.connect(self.refresh_batch_files)
+
+    def refresh_batch_files(self):
+        self.batch_table.setRowCount(0)  # Clear existing rows
+        self.load_batch_files()
+        if self.current_batch_id:
+            self.load_batch_results(self.current_batch_id)
+
     def load_batch_files(self):
         results_dir = "completed_results"
         try:
@@ -84,7 +96,10 @@ class CompletedBatchResultsWidget(QWidget):
         self.batch_table.setItem(row_position, 1, QTableWidgetItem(str(timestamp)))
 
     def load_batch_results(self, item):
-        self.current_batch_id = self.batch_table.item(item.row(), 0).text()
+        if isinstance(item, QTableWidgetItem):
+            self.current_batch_id = item.text()
+        else:
+            self.current_batch_id = item
         file_path = f"completed_results/completed_batch_{self.current_batch_id}.jsonl"
         self.results_table.setRowCount(0)  # Clear previous results
         try:
@@ -109,14 +124,11 @@ class CompletedBatchResultsWidget(QWidget):
     def approve_all(self):
         if self.current_batch_id:
             for row in range(self.results_table.rowCount()):
-                suggestion = self.results_table.item(row, 1).text()
+                custom_id = self.results_table.item(row, 0).text()
+                content = self.results_table.item(row, 1).text()
+                suggestion = content  # The suggestion is the content itself
                 self.apply_decision(row, suggestion)
             self.batch_decision_made.emit(self.current_batch_id, "APPROVE")
-
-    def make_decision(self, decision):
-        current_row = self.results_table.currentRow()
-        if current_row >= 0:
-            self.apply_decision(current_row, decision)
 
     def apply_decision(self, row, decision):
         custom_id = self.results_table.item(row, 0).text()
@@ -125,5 +137,7 @@ class CompletedBatchResultsWidget(QWidget):
         self.results_table.item(row, 2).setBackground(QColor('lightgreen' if decision == "KEEP" else 'lightcoral'))
         self.decision_made.emit(custom_id, content, decision)
 
-
-
+    def make_decision(self, decision):
+        current_row = self.results_table.currentRow()
+        if current_row >= 0:
+            self.apply_decision(current_row, decision)

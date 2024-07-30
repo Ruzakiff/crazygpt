@@ -5,7 +5,7 @@ import json
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QTextEdit, QProgressBar, QStackedWidget, 
                              QTableWidget, QTableWidgetItem, QHeaderView, QListWidget,
-                             QComboBox)
+                             QComboBox, QFileDialog)
 from PyQt6.QtCore import Qt, QTimer, QSize, QThread
 from PyQt6.QtGui import QIcon
 
@@ -86,6 +86,20 @@ class MainWindow(QMainWindow):
         upload_widget = QWidget()
         layout = QVBoxLayout(upload_widget)
 
+        # Add file selection options
+        file_selection_layout = QHBoxLayout()
+        
+        self.select_files_button = QPushButton("Select Files")
+        self.select_files_button.clicked.connect(self.select_files)
+        file_selection_layout.addWidget(self.select_files_button)
+        
+        self.select_folder_button = QPushButton("Select Folder")
+        self.select_folder_button.clicked.connect(self.select_folder)
+        file_selection_layout.addWidget(self.select_folder_button)
+        
+        layout.addLayout(file_selection_layout)
+
+        # Existing drag and drop area
         self.drag_drop_area = DragDropArea(self)
         layout.addWidget(self.drag_drop_area)
 
@@ -260,6 +274,19 @@ class MainWindow(QMainWindow):
     def create_completed_results_page(self):
         self.completed_results_widget = CompletedBatchResultsWidget()
         self.stacked_widget.addWidget(self.completed_results_widget)
+
+    def select_files(self):
+        file_dialog = QFileDialog()
+        files, _ = file_dialog.getOpenFileNames(self, "Select Files", "", "Image Files (*.png *.jpg *.jpeg *.gif *.bmp)")
+        if files:
+            for file in files:
+                self.process_file(file)
+
+    def select_folder(self):
+        folder_dialog = QFileDialog()
+        folder = folder_dialog.getExistingDirectory(self, "Select Folder")
+        if folder:
+            self.process_folder(folder)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

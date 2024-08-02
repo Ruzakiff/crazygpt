@@ -5,7 +5,7 @@ import json
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QTextEdit, QProgressBar, QStackedWidget, 
                              QTableWidget, QTableWidgetItem, QHeaderView, QListWidget,
-                             QComboBox, QFileDialog)
+                             QComboBox, QFileDialog, QFrame)
 from PyQt6.QtCore import Qt, QTimer, QSize, QThread
 from PyQt6.QtGui import QIcon
 
@@ -15,6 +15,7 @@ from batch_status_thread import BatchStatusThread
 from batch_poll_worker import BatchPollWorker
 from drag_drop_area import DragDropArea
 from completed_tab import CompletedBatchResultsWidget  # Add this import
+from token_widget import TokenWidget  # Import the TokenWidget
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -44,43 +45,80 @@ class MainWindow(QMainWindow):
         self.status_timer.start(30000)  # 30 seconds
 
     def setup_ui(self):
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
-        main_layout = QHBoxLayout(main_widget)
-
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        
+        # Add TokenWidget at the top
+        self.token_widget = TokenWidget()
+        main_layout.addWidget(self.token_widget)
+        
+        # Add a line separator
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setFrameShadow(QFrame.Shadow.Sunken)
+        main_layout.addWidget(line)
+        
+        # Create horizontal layout for sidebar and main content
+        content_layout = QHBoxLayout()
+        main_layout.addLayout(content_layout)
+        
         # Create sidebar
-        self.create_sidebar()
-
+        sidebar_layout = QVBoxLayout()
+        self.create_sidebar(sidebar_layout)
+        
+        # Add sidebar to content layout
+        sidebar_widget = QWidget()
+        sidebar_widget.setLayout(sidebar_layout)
+        sidebar_widget.setFixedWidth(80)  # Reduced width for icon-only sidebar
+        content_layout.addWidget(sidebar_widget)
+        
         # Create stacked widget for main content
         self.stacked_widget = QStackedWidget()
+        content_layout.addWidget(self.stacked_widget)
 
         # Create and add pages
         self.create_upload_page()
         self.create_batch_status_page()
-        self.create_batch_details_page()
         self.create_completed_results_page()  # Add this line
 
-        main_layout.addWidget(self.sidebar)
-        main_layout.addWidget(self.stacked_widget)
+        # Set a minimum width for the window to ensure all elements are visible
+        self.setMinimumWidth(800)
 
-    def create_sidebar(self):
-        self.sidebar = QWidget()
-        self.sidebar.setFixedWidth(200)
-        self.sidebar_layout = QVBoxLayout(self.sidebar)
-        self.sidebar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+    def update_token(self, token):
+        # Update the token wherever it's needed in your application
+        print(f"Token updated: {token}")
+        # You might want to store this token securely and use it for API calls
 
-        # Create sidebar buttons
-        self.create_sidebar_button("Upload", "upload_icon.png", 0)
-        self.create_sidebar_button("Batch Status", "status_icon.png", 1)
-        self.create_sidebar_button("Completed Results", "results_icon.png", 3)  # Add this line
+    def create_sidebar(self, layout):
+        self.create_sidebar_button("Upload", "upload.png", 0, layout)
+        self.create_sidebar_button("Batch Status", "batch_status.webp", 1, layout)
+        self.create_sidebar_button("Completed Results", "decisions.webp", 2, layout)
+        layout.addStretch()  # This pushes the buttons to the top
 
-    def create_sidebar_button(self, text, icon_path, page_index):
-        button = QPushButton(text)
+    def create_sidebar_button(self, tooltip, icon_name, page_index, layout):
+        button = QPushButton()
+        icon_path = os.path.join("icons", icon_name)
         button.setIcon(QIcon(icon_path))
-        button.setIconSize(QSize(24, 24))
-        button.setFixedHeight(50)
+        button.setIconSize(QSize(40, 40))
+        button.setFixedSize(60, 60)
+        button.setToolTip(tooltip)
+        button.setStyleSheet("""
+            QPushButton {
+                border: none;
+                border-radius: 10px;
+                background-color: #2C2C2C;
+                margin: 5px;
+            }
+            QPushButton:hover {
+                background-color: #3C3C3C;
+            }
+            QPushButton:pressed {
+                background-color: #4C4C4C;
+            }
+        """)
         button.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(page_index))
-        self.sidebar_layout.addWidget(button)
+        layout.addWidget(button)
 
     def create_upload_page(self):
         upload_widget = QWidget()

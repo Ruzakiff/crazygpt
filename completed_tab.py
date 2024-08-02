@@ -151,7 +151,9 @@ class CompletedBatchResultsWidget(QWidget):
                     print("DELLLLL")
                     #os.remove(file_path)
                 return True
-            # elif decision == "KEEP":
+            elif decision == "KEEP":
+                print("KEEP")
+                return True
             #     with open(file_path, 'w') as file:
             #         file.write(content)
             #     return True

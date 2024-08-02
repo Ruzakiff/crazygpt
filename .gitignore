@@ -1,2 +1,4 @@
 venv/
 .env
+completed_results/
+pending_batches/

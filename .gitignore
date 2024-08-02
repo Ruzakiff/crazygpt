@@ -2,3 +2,4 @@ venv/
 .env
 completed_results/
 pending_batches/
+server_data.db

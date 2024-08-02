@@ -16,6 +16,7 @@ from batch_poll_worker import BatchPollWorker
 from drag_drop_area import DragDropArea
 from completed_tab import CompletedBatchResultsWidget  # Add this import
 from token_widget import TokenWidget  # Import the TokenWidget
+from schedule_widget import ScheduleWidget  # Import the ScheduleWidget
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -81,6 +82,7 @@ class MainWindow(QMainWindow):
         self.create_upload_page()
         self.create_batch_status_page()
         self.create_completed_results_page()  # Add this line
+        self.create_schedule_page()  # Add this line
 
         # Set a minimum width for the window to ensure all elements are visible
         self.setMinimumWidth(800)
@@ -94,6 +96,7 @@ class MainWindow(QMainWindow):
         self.create_sidebar_button("Upload", "upload.png", 0, layout)
         self.create_sidebar_button("Batch Status", "batch_status.webp", 1, layout)
         self.create_sidebar_button("Completed Results", "decisions.webp", 2, layout)
+        self.create_sidebar_button("Schedule", "schedule.png", 3, layout)  # Add this line
         layout.addStretch()  # This pushes the buttons to the top
 
     def create_sidebar_button(self, tooltip, icon_name, page_index, layout):
@@ -312,6 +315,10 @@ class MainWindow(QMainWindow):
     def create_completed_results_page(self):
         self.completed_results_widget = CompletedBatchResultsWidget()
         self.stacked_widget.addWidget(self.completed_results_widget)
+
+    def create_schedule_page(self):
+        self.schedule_widget = ScheduleWidget()
+        self.stacked_widget.addWidget(self.schedule_widget)
 
     def select_files(self):
         file_dialog = QFileDialog()

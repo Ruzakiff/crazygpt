@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
                              QComboBox, QDateTimeEdit, QTableWidget, QTableWidgetItem, QHeaderView, 
-                             QFileDialog, QMessageBox)
+                             QFileDialog, QMessageBox, QDialog, QDialogButtonBox)
 from PyQt6.QtCore import QDateTime, Qt
 
 class ScheduleWidget(QWidget):
@@ -17,7 +17,7 @@ class ScheduleWidget(QWidget):
         self.file_input.setPlaceholderText("Select file or folder")
         file_layout.addWidget(self.file_input)
         self.browse_button = QPushButton("Browse")
-        self.browse_button.clicked.connect(self.browse_files)
+        self.browse_button.clicked.connect(self.browse_files_or_folders)
         file_layout.addWidget(self.browse_button)
         layout.addLayout(file_layout)
 
@@ -56,11 +56,36 @@ class ScheduleWidget(QWidget):
         self.tasks_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.tasks_table)
 
-    def browse_files(self):
-        options = QFileDialog.Options()
-        file_path, _ = QFileDialog.getOpenFileName(self, "Select File or Folder", "", "All Files (*);;Folders (*)", options=options)
+    def browse_files_or_folders(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Select File or Folder")
+        dialog_layout = QVBoxLayout(dialog)
+
+        file_button = QPushButton("Select File")
+        file_button.clicked.connect(lambda: self.select_file(dialog))
+        dialog_layout.addWidget(file_button)
+
+        folder_button = QPushButton("Select Folder")
+        folder_button.clicked.connect(lambda: self.select_folder(dialog))
+        dialog_layout.addWidget(folder_button)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        button_box.rejected.connect(dialog.reject)
+        dialog_layout.addWidget(button_box)
+
+        dialog.exec()
+
+    def select_file(self, dialog):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select File", "", "All Files (*)")
         if file_path:
             self.file_input.setText(file_path)
+        dialog.accept()
+
+    def select_folder(self, dialog):
+        folder_path = QFileDialog.getExistingDirectory(self, "Select Folder")
+        if folder_path:
+            self.file_input.setText(folder_path)
+        dialog.accept()
 
     def schedule_upload(self):
         file_path = self.file_input.text()

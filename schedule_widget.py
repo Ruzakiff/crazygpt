@@ -1,3 +1,4 @@
+import json
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
                              QComboBox, QDateTimeEdit, QTableWidget, QTableWidgetItem, QHeaderView, 
                              QFileDialog, QMessageBox, QDialog, QDialogButtonBox)
@@ -7,6 +8,7 @@ class ScheduleWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.init_ui()
+        self.load_scheduled_tasks()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -97,13 +99,49 @@ class ScheduleWidget(QWidget):
             QMessageBox.warning(self, "Input Error", "Please provide both file/folder and prompt.")
             return
 
+        task = {
+            "file_path": file_path,
+            "prompt": prompt,
+            "interval": interval,
+            "start_time": start_time
+        }
+
+        self.add_task_to_table(task)
+        self.save_scheduled_task(task)
+
+        # Clear input fields after scheduling
+        self.file_input.clear()
+        self.prompt_input.clear()
+        self.interval_combo.setCurrentIndex(0)
+        self.start_time_edit.setDateTime(QDateTime.currentDateTime())
+
+        QMessageBox.information(self, "Task Scheduled", "The upload task has been scheduled successfully.")
+
+    def add_task_to_table(self, task):
         row_position = self.tasks_table.rowCount()
         self.tasks_table.insertRow(row_position)
-        self.tasks_table.setItem(row_position, 0, QTableWidgetItem(file_path))
-        self.tasks_table.setItem(row_position, 1, QTableWidgetItem(prompt))
-        self.tasks_table.setItem(row_position, 2, QTableWidgetItem(interval))
-        self.tasks_table.setItem(row_position, 3, QTableWidgetItem(start_time))
+        self.tasks_table.setItem(row_position, 0, QTableWidgetItem(task["file_path"]))
+        self.tasks_table.setItem(row_position, 1, QTableWidgetItem(task["prompt"]))
+        self.tasks_table.setItem(row_position, 2, QTableWidgetItem(task["interval"]))
+        self.tasks_table.setItem(row_position, 3, QTableWidgetItem(task["start_time"]))
 
-        # Here you would add the logic to actually schedule the task
-        # This could involve setting up a cron job, using a task scheduler, etc.
-        # For now, we'll just add it to the table as a placeholder
+    def save_scheduled_task(self, task):
+        try:
+            with open("scheduled_tasks.json", "r+") as file:
+                tasks = json.load(file)
+                tasks.append(task)
+                file.seek(0)
+                json.dump(tasks, file, indent=2)
+                file.truncate()
+        except FileNotFoundError:
+            with open("scheduled_tasks.json", "w") as file:
+                json.dump([task], file, indent=2)
+
+    def load_scheduled_tasks(self):
+        try:
+            with open("scheduled_tasks.json", "r") as file:
+                tasks = json.load(file)
+                for task in tasks:
+                    self.add_task_to_table(task)
+        except FileNotFoundError:
+            pass  # No tasks file exists yet

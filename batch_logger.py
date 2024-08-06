@@ -5,6 +5,9 @@ import threading
 import psycopg2
 from psycopg2 import sql
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 class BatchLogger:
     def __init__(self):
@@ -13,6 +16,39 @@ class BatchLogger:
         self.worker_thread.start()
         self.lock = threading.Lock()
         self.DATABASE_URL = os.environ.get('DATABASE_URL')
+        self._create_table()
+
+    def _create_table(self):
+        logger.info("Creating batch_logs table if it doesn't exist")
+        conn = psycopg2.connect(self.DATABASE_URL)
+        c = conn.cursor()
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS batch_logs (
+                id SERIAL PRIMARY KEY,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                batch_id TEXT,
+                status TEXT,
+                user_token TEXT,
+                total_requests INTEGER,
+                completed_requests INTEGER,
+                failed_requests INTEGER,
+                created_at TIMESTAMP,
+                completed_at TIMESTAMP,
+                input_file_id TEXT,
+                output_file_id TEXT,
+                remaining_balance INTEGER,
+                completion_window TEXT,
+                endpoint TEXT,
+                metadata TEXT,
+                processing_rate FLOAT,
+                overall_processing_rate FLOAT,
+                estimated_remaining_time FLOAT,
+                total_elapsed_time FLOAT
+            )
+        ''')
+        conn.commit()
+        conn.close()
+        logger.info("batch_logs table created or already exists")
 
     def log_batch_status(self, batch_id, status, user_token):
         self.log_queue.put((batch_id, status, user_token))
@@ -27,32 +63,6 @@ class BatchLogger:
         with self.lock:
             conn = psycopg2.connect(self.DATABASE_URL)
             c = conn.cursor()
-            
-            # Create the batch_logs table if it doesn't exist
-            c.execute('''
-                CREATE TABLE IF NOT EXISTS batch_logs (
-                    id SERIAL PRIMARY KEY,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    batch_id TEXT,
-                    status TEXT,
-                    user_token TEXT,
-                    total_requests INTEGER,
-                    completed_requests INTEGER,
-                    failed_requests INTEGER,
-                    created_at TIMESTAMP,
-                    completed_at TIMESTAMP,
-                    input_file_id TEXT,
-                    output_file_id TEXT,
-                    remaining_balance INTEGER,
-                    completion_window TEXT,
-                    endpoint TEXT,
-                    metadata TEXT,
-                    processing_rate FLOAT,
-                    overall_processing_rate FLOAT,
-                    estimated_remaining_time FLOAT,
-                    total_elapsed_time FLOAT
-                )
-            ''')
             
             # Insert the log entry
             c.execute('''

@@ -63,6 +63,9 @@ def init_db():
     conn.commit()
     conn.close()
     logger.info("Database initialized successfully")
+    
+    # Initialize batch_logs table
+    batch_logger._create_table()
 
 # Database operations
 def db_create_token(token, amount):

@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 import os
 import secrets
 import time
@@ -285,6 +285,59 @@ def upload_file_to_openai(file):
 # Initialize the BatchLogger
 batch_logger = BatchLogger()
 logger.info("BatchLogger initialized")
+
+# Add this function to check for admin access
+def is_admin():
+    admin_token = os.environ.get('ADMIN_TOKEN')
+    return request.headers.get('Admin-Token') == admin_token
+
+@app.route('/admin/batch_logs', methods=['GET'])
+def get_all_batch_logs():
+    logger.info("Admin batch logs endpoint accessed")
+    
+    if not is_admin():
+        logger.warning("Unauthorized access attempt to admin batch logs")
+        return jsonify({'error': 'Unauthorized access'}), 403
+
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        logger.info("Retrieving all batch logs")
+        cursor.execute("""
+            SELECT * FROM batch_logs 
+            ORDER BY timestamp DESC
+        """)
+        
+        logs = cursor.fetchall()
+        conn.close()
+
+        logger.info(f"Retrieved {len(logs)} log entries")
+
+        # Create a CSV string
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Write header
+        if logs:
+            writer.writerow(logs[0].keys())
+
+        # Write data
+        for log in logs:
+            writer.writerow(log.values())
+
+        # Create response
+        response = Response(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={"Content-Disposition": "attachment;filename=batch_logs.csv"}
+        )
+
+        return response
+
+    except Exception as e:
+        logger.error(f"Failed to retrieve batch logs: {str(e)}")
+        return jsonify({'error': f"Failed to retrieve batch logs: {str(e)}"}), 500
 
 # Endpoints
 @app.route('/')
@@ -592,46 +645,6 @@ def retrieve_file_content(file_id):
         logger.error(f"Failed to retrieve file content for file {file_id}: {str(e)}")
         return jsonify({'error': f"Failed to retrieve file content: {str(e)}"}), 500
 
-@app.route('/batch_logs', methods=['GET'])
-def get_batch_logs():
-    logger.info("Get batch logs endpoint accessed")
-    user_token = request.headers.get('User-Token')
-    if not user_token or not validate_token(user_token):
-        logger.warning(f"Invalid or expired token: {user_token}")
-        return jsonify({'error': 'Invalid or expired token'}), 400
-
-    batch_id = request.args.get('batch_id')
-    limit = request.args.get('limit', 100)
-    offset = request.args.get('offset', 0)
-
-    try:
-        conn = psycopg2.connect(DATABASE_URL)
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        
-        if batch_id:
-            cursor.execute("""
-                SELECT * FROM batch_logs 
-                WHERE user_token = %s AND batch_id = %s
-                ORDER BY timestamp DESC
-                LIMIT %s OFFSET %s
-            """, (user_token, batch_id, limit, offset))
-        else:
-            cursor.execute("""
-                SELECT * FROM batch_logs 
-                WHERE user_token = %s
-                ORDER BY timestamp DESC
-                LIMIT %s OFFSET %s
-            """, (user_token, limit, offset))
-        
-        logs = cursor.fetchall()
-        conn.close()
-
-        return jsonify({'logs': logs}), 200
-
-    except Exception as e:
-        logger.error(f"Failed to retrieve batch logs: {str(e)}")
-        return jsonify({'error': f"Failed to retrieve batch logs: {str(e)}"}), 500
-
 if __name__ == '__main__':
     init_db()
     # Local development
@@ -640,3 +653,4 @@ if __name__ == '__main__':
     # Heroku production
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
+

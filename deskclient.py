@@ -572,7 +572,7 @@ class DeskClient:
 
 # Example usage
 if __name__ == "__main__":
-    server_url = "http://localhost:5000"  # Local development server URL
+    server_url = "https://organizeme-04efee729c26.herokuapp.com"  # Local development server URL
     client = DeskClient(server_url, user_token='x9z0oeGLYu36GQqAjte8kg')
     
     if client.check_balance() < 10:

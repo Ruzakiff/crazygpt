@@ -25,7 +25,7 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 1000, 600)
 
         # Update this line with a valid token
-        self.client = DeskClient("http://localhost:5000", user_token='your_valid_token_here')
+        self.client = DeskClient("https://organizeme-04efee729c26.herokuapp.com", user_token='your_valid_token_here')
 
         # Initialize prompt_options as a dictionary
         self.prompt_options = {

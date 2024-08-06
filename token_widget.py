@@ -8,7 +8,7 @@ class TokenWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.server_url = "http://localhost:5000"  # Assuming the real server is running locally
+        self.server_url = "https://organizeme-04efee729c26.herokuapp.com"  # Assuming the real server is running locally
         self.init_ui()
 
     def init_ui(self):

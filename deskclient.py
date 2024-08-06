@@ -570,55 +570,55 @@ class DeskClient:
             tasks = [self.async_poll_batch_status(session, job['id']) for job in batch_jobs]
             await asyncio.gather(*tasks)
 
-# Example usage
-if __name__ == "__main__":
-    server_url = "https://organizeme-04efee729c26.herokuapp.com"  # Local development server URL
-    client = DeskClient(server_url, user_token='x9z0oeGLYu36GQqAjte8kg')
+# # Example usage
+# if __name__ == "__main__":
+#     server_url = "https://organizeme-04efee729c26.herokuapp.com"  # Local development server URL
+#     client = DeskClient(server_url, user_token='x9z0oeGLYu36GQqAjte8kg')
     
-    if client.check_balance() < 10:
-        print("Insufficient tokens, purchasing more...")
-        print(client.purchase_tokens(100))
-    else:
-        print("Sufficient tokens available.")
-        batch_jobs = client.get_batch_jobs()
-        client.get_file_ids()
+#     if client.check_balance() < 10:
+#         print("Insufficient tokens, purchasing more...")
+#         print(client.purchase_tokens(100))
+#     else:
+#         print("Sufficient tokens available.")
+#         batch_jobs = client.get_batch_jobs()
+#         client.get_file_ids()
     
-    folder_path = input("Enter the folder path: ")
-    custom_prompt = input("Enter your custom prompt (or press Enter for default): ")
-    if not custom_prompt:
-        custom_prompt = "Analyze this image. DELETE all photos of woman/girls and animals. Include to be deleted images that may seem controversial and disrespectful."
+#     folder_path = input("Enter the folder path: ")
+#     custom_prompt = input("Enter your custom prompt (or press Enter for default): ")
+#     if not custom_prompt:
+#         custom_prompt = "Analyze this image. DELETE all photos of woman/girls and animals. Include to be deleted images that may seem controversial and disrespectful."
     
-    if client.process_folder(folder_path, custom_prompt):
-        run_id = uuid.uuid4().hex[:8]  # Generate a unique run ID
-        output_base = f"batch_requests_{run_id}"
-        client.create_batch_jsonl(output_base)
+#     if client.process_folder(folder_path, custom_prompt):
+#         run_id = uuid.uuid4().hex[:8]  # Generate a unique run ID
+#         output_base = f"batch_requests_{run_id}"
+#         client.create_batch_jsonl(output_base)
         
-        # Upload each created JSONL file and remove after uploading
-        file_index = 1
-        while True:
-            file_path = f"{output_base}_{file_index}.jsonl"
-            if not os.path.exists(file_path):
-                break
-            print(f"Uploading {file_path}...")
-            client.upload_jsonl(file_path)
-            file_index += 1
-    else:
-        print("No batch files were created due to lack of processable images.")
+#         # Upload each created JSONL file and remove after uploading
+#         file_index = 1
+#         while True:
+#             file_path = f"{output_base}_{file_index}.jsonl"
+#             if not os.path.exists(file_path):
+#                 break
+#             print(f"Uploading {file_path}...")
+#             client.upload_jsonl(file_path)
+#             file_index += 1
+#     else:
+#         print("No batch files were created due to lack of processable images.")
 
-    # Check balance after uploading
-    client.check_balance()
+#     # Check balance after uploading
+#     client.check_balance()
 
-    client.get_file_ids()
-    # Get batch jobs
-    batch_jobs = client.get_batch_jobs()
+#     client.get_file_ids()
+#     # Get batch jobs
+#     batch_jobs = client.get_batch_jobs()
 
-    if batch_jobs:
-        print("Processing all batch jobs concurrently...")
-        asyncio.run(client.async_process_all_batches(batch_jobs))
-    else:
-        print("No batch jobs found.")
+#     if batch_jobs:
+#         print("Processing all batch jobs concurrently...")
+#         asyncio.run(client.async_process_all_batches(batch_jobs))
+#     else:
+#         print("No batch jobs found.")
 
-    # Check final balance
-    client.check_balance()
+#     # Check final balance
+#     client.check_balance()
 
-    client.get_file_ids()
+#     client.get_file_ids()

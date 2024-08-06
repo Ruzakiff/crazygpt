@@ -16,6 +16,7 @@ from batch_logger import BatchLogger  # Import the BatchLogger class
 from dotenv import load_dotenv
 import logging
 import sys
+from psycopg2.extras import RealDictCursor
 
 # Configure logging to write to stdout
 logging.basicConfig(
@@ -590,6 +591,46 @@ def retrieve_file_content(file_id):
     except Exception as e:
         logger.error(f"Failed to retrieve file content for file {file_id}: {str(e)}")
         return jsonify({'error': f"Failed to retrieve file content: {str(e)}"}), 500
+
+@app.route('/batch_logs', methods=['GET'])
+def get_batch_logs():
+    logger.info("Get batch logs endpoint accessed")
+    user_token = request.headers.get('User-Token')
+    if not user_token or not validate_token(user_token):
+        logger.warning(f"Invalid or expired token: {user_token}")
+        return jsonify({'error': 'Invalid or expired token'}), 400
+
+    batch_id = request.args.get('batch_id')
+    limit = request.args.get('limit', 100)
+    offset = request.args.get('offset', 0)
+
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        if batch_id:
+            cursor.execute("""
+                SELECT * FROM batch_logs 
+                WHERE user_token = %s AND batch_id = %s
+                ORDER BY timestamp DESC
+                LIMIT %s OFFSET %s
+            """, (user_token, batch_id, limit, offset))
+        else:
+            cursor.execute("""
+                SELECT * FROM batch_logs 
+                WHERE user_token = %s
+                ORDER BY timestamp DESC
+                LIMIT %s OFFSET %s
+            """, (user_token, limit, offset))
+        
+        logs = cursor.fetchall()
+        conn.close()
+
+        return jsonify({'logs': logs}), 200
+
+    except Exception as e:
+        logger.error(f"Failed to retrieve batch logs: {str(e)}")
+        return jsonify({'error': f"Failed to retrieve batch logs: {str(e)}"}), 500
 
 if __name__ == '__main__':
     init_db()

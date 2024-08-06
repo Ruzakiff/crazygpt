@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 import logging
 import sys
 from psycopg2.extras import RealDictCursor
+import io  # Add this import
 
 # Configure logging to write to stdout
 logging.basicConfig(

@@ -24,8 +24,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("DeskClient GUI")
         self.setGeometry(100, 100, 1000, 600)
 
-        # Update this line with a valid token
-        self.client = DeskClient("https://organizeme-04efee729c26.herokuapp.com", user_token='your_valid_token_here')
+        # Initialize with a placeholder token
+        self.client = DeskClient("https://organizeme-04efee729c26.herokuapp.com", user_token="PLACEHOLDER")
 
         # Initialize prompt_options as a dictionary
         self.prompt_options = {
@@ -37,7 +37,6 @@ class MainWindow(QMainWindow):
         }
 
         self.setup_ui()
-        self.check_balance()
         self.poll_incomplete_jobs()
 
         # Set up timer to update batch status every 30 seconds
@@ -52,6 +51,7 @@ class MainWindow(QMainWindow):
         
         # Add TokenWidget at the top
         self.token_widget = TokenWidget()
+        self.token_widget.token_updated.connect(self.update_token)
         main_layout.addWidget(self.token_widget)
         
         # Add a line separator
@@ -81,22 +81,25 @@ class MainWindow(QMainWindow):
         # Create and add pages
         self.create_upload_page()
         self.create_batch_status_page()
-        self.create_completed_results_page()  # Add this line
-        self.create_schedule_page()  # Add this line
+        self.create_batch_details_page()  # Keep this, but don't add it to the main navigation
+        self.create_completed_results_page()
+        self.create_schedule_page()
 
         # Set a minimum width for the window to ensure all elements are visible
         self.setMinimumWidth(800)
 
     def update_token(self, token):
-        # Update the token wherever it's needed in your application
+        # Update the token in the DeskClient
+        self.client.user_token = token
         print(f"Token updated: {token}")
-        # You might want to store this token securely and use it for API calls
+        self.check_balance()
+        self.update_batch_status()  # Refresh batch status when token is updated
 
     def create_sidebar(self, layout):
         self.create_sidebar_button("Upload", "upload.png", 0, layout)
         self.create_sidebar_button("Batch Status", "batch_status.webp", 1, layout)
-        self.create_sidebar_button("Completed Results", "decisions.webp", 2, layout)
-        self.create_sidebar_button("Schedule", "schedule.png", 3, layout)  # Add this line
+        self.create_sidebar_button("Completed Results", "decisions.webp", 3, layout)
+        self.create_sidebar_button("Schedule", "schedule.png", 4, layout)
         layout.addStretch()  # This pushes the buttons to the top
 
     def create_sidebar_button(self, tooltip, icon_name, page_index, layout):
@@ -242,9 +245,20 @@ class MainWindow(QMainWindow):
     def update_batch_status(self):
         self.batch_status_thread = BatchStatusThread(self.client)
         self.batch_status_thread.update_signal.connect(self.display_batch_status)
+        self.batch_status_thread.error_signal.connect(self.handle_batch_status_error)
         self.batch_status_thread.start()
 
+    def handle_batch_status_error(self, error_message):
+        self.log(f"Batch status error: {error_message}")
+        # Clear the status table when there's an error
+        self.status_table.setRowCount(0)
+
     def display_batch_status(self, batch_jobs):
+        if not batch_jobs:
+            self.log("No batch jobs found.")
+            self.status_table.setRowCount(0)
+            return
+
         self.status_table.setRowCount(len(batch_jobs))
         for row, job in enumerate(batch_jobs):
             self.status_table.setItem(row, 0, QTableWidgetItem(job['id']))
@@ -253,13 +267,14 @@ class MainWindow(QMainWindow):
             self.status_table.setItem(row, 3, QTableWidgetItem(job.get('completed_at', 'N/A')))
 
     def check_balance(self):
-        balance = self.client.check_balance()
-        if balance < 10:
-            self.log("Insufficient tokens, purchasing more...")
-            new_balance = self.client.purchase_tokens(100)
-            self.log(f"Purchased tokens. New balance: {new_balance}")
-        else:
-            self.log(f"Sufficient tokens available. Current balance: {balance}")
+        try:
+            balance = self.client.check_balance()
+            if balance is not None:
+                self.log(f"Current token balance: {balance}")
+            else:
+                self.log("Failed to retrieve balance. Token may be invalid.")
+        except Exception as e:
+            self.log(f"Error checking balance: {str(e)}")
 
     def process_file(self, file_path):
         self.log(f"Processing file: {file_path}")
@@ -305,7 +320,11 @@ class MainWindow(QMainWindow):
         self.poll_thread.started.connect(self.poll_worker.run)
         self.poll_worker.update_signal.connect(self.log)
         self.poll_worker.finished_signal.connect(self.on_poll_finished)
+        self.poll_worker.error_signal.connect(self.handle_poll_error)
         self.poll_thread.start()
+
+    def handle_poll_error(self, error_message):
+        self.log(f"Error in batch poll: {error_message}")
 
     def on_poll_finished(self):
         self.poll_thread.quit()

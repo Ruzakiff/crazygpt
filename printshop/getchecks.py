@@ -114,9 +114,22 @@ def detect_compression_artifacts(image, block_size=8, detail_threshold=0.1, edge
     # 1. Detect blockiness
     def detect_blockiness(img, block_size):
         h, w = img.shape
-        block_diff_h = np.abs(img[block_size-1::block_size, :] - img[block_size::block_size, :]).mean()
-        block_diff_v = np.abs(img[:, block_size-1::block_size] - img[:, block_size::block_size]).mean()
-        return (block_diff_h + block_diff_v) / 2
+        
+        # Create kernels for horizontal and vertical edge detection
+        kernel_h = np.zeros((block_size, block_size))
+        kernel_h[:, -1] = 1
+        kernel_h[:, 0] = -1
+        
+        kernel_v = np.zeros((block_size, block_size))
+        kernel_v[-1, :] = 1
+        kernel_v[0, :] = -1
+        
+        # Convolve the image with the kernels
+        block_diff_h = convolve2d(img, kernel_h, mode='valid', boundary='symm')
+        block_diff_v = convolve2d(img, kernel_v, mode='valid', boundary='symm')
+        
+        # Calculate the mean of the absolute differences
+        return (np.mean(np.abs(block_diff_h)) + np.mean(np.abs(block_diff_v))) / 2
 
     blockiness = detect_blockiness(img_gray, block_size)
 
